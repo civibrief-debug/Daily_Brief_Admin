@@ -109,40 +109,50 @@ export function AdminProvider({ children }) {
     const loadSharedDbData = async () => {
       try {
         const [artRes, subRes, suppRes, admRes] = await Promise.all([
-          fetch('/api/db/articles'),
-          fetch('/api/db/subscribers'),
-          fetch('/api/db/support'),
-          fetch('/api/db/admins')
+          fetch('/api/db/articles').catch(() => null),
+          fetch('/api/db/subscribers').catch(() => null),
+          fetch('/api/db/support').catch(() => null),
+          fetch('/api/db/admins').catch(() => null)
         ]);
         
-        const artJson = await artRes.json();
-        if (artJson.success && Array.isArray(artJson.data)) {
-          setArticles(artJson.data);
+        if (artRes && artRes.ok) {
+          const artJson = await artRes.json().catch(() => null);
+          if (artJson && artJson.success && Array.isArray(artJson.data)) {
+            setArticles(artJson.data);
+          }
         }
 
-        const subJson = await subRes.json();
-        if (subJson.success && Array.isArray(subJson.data)) {
-          setSubscribers(subJson.data);
+        if (subRes && subRes.ok) {
+          const subJson = await subRes.json().catch(() => null);
+          if (subJson && subJson.success && Array.isArray(subJson.data)) {
+            setSubscribers(subJson.data);
+          }
         }
 
-        const suppJson = await suppRes.json();
-        if (suppJson.success && Array.isArray(suppJson.data)) {
-          setSupportTickets(suppJson.data);
+        if (suppRes && suppRes.ok) {
+          const suppJson = await suppRes.json().catch(() => null);
+          if (suppJson && suppJson.success && Array.isArray(suppJson.data)) {
+            setSupportTickets(suppJson.data);
+          }
         }
 
-        const admJson = await admRes.json();
-        if (admJson.success && Array.isArray(admJson.data) && admJson.data.length > 0) {
-          setAdminUsers(prev => {
-            const mergedMap = new Map();
-            prev.forEach(a => mergedMap.set(a.id, a));
-            admJson.data.forEach(a => mergedMap.set(a.id, { ...mergedMap.get(a.id), ...a }));
-            const merged = Array.from(mergedMap.values()).filter(a => a.roleId !== 'super_admin');
-            localStorage.setItem('db_admin_users', JSON.stringify(merged));
-            return merged;
-          });
+        if (admRes && admRes.ok) {
+          const admJson = await admRes.json().catch(() => null);
+          if (admJson && admJson.success && Array.isArray(admJson.data) && admJson.data.length > 0) {
+            setAdminUsers(prev => {
+              const fileAdminsMap = new Map(admJson.data.map(u => [u.id, u]));
+              const updated = prev.map(u => fileAdminsMap.get(u.id) || u);
+              admJson.data.forEach(u => {
+                if (!updated.some(existing => existing.id === u.id)) {
+                  updated.push(u);
+                }
+              });
+              return updated;
+            });
+          }
         }
       } catch (err) {
-        console.error('Failed to sync with shared database:', err);
+        console.warn("Failed to sync with shared database (suppressed):", err?.message || err);
       } finally {
         setIsInitialized(true);
       }
@@ -440,13 +450,14 @@ export function AdminProvider({ children }) {
     if (!articleId) return [];
     try {
       const res = await fetch(`/api/db/articles/${articleId}/comments`);
+      if (!res.ok) return [];
       const data = await res.json();
-      if (data.success && Array.isArray(data.comments)) {
+      if (data && data.success && Array.isArray(data.comments)) {
         setArticles(prev => prev.map(a => a.id === articleId ? { ...a, comments: data.comments } : a));
         return data.comments;
       }
     } catch (err) {
-      console.error("Failed to fetch article comments", err);
+      console.warn("Failed to fetch article comments (suppressed):", err?.message || err);
     }
     return [];
   };

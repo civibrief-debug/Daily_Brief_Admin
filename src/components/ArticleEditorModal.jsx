@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Modal from './Modal';
 import { useAdmin } from '../context/AdminContext';
+import { sanitizeArticleHtml } from '../lib/sanitizer';
 import { 
   Bold, 
   Italic, 
@@ -37,7 +38,10 @@ import {
   Copy,
   Clipboard,
   Paintbrush,
-  Eye
+  Eye,
+  Video,
+  Film,
+  Play
 } from 'lucide-react';
 
 import { categorySubSectionsMap } from './AdminUserModal';
@@ -135,16 +139,43 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
       setImageBounds(null);
       return;
     }
-    const nodeRect = node.getBoundingClientRect();
+    const imgEl = node.tagName === 'IMG' ? node : node.querySelector?.('img');
+    if (!imgEl || !document.body.contains(imgEl)) {
+      setImageBounds(null);
+      return;
+    }
+    const nodeRect = imgEl.getBoundingClientRect();
     const editorRect = editorRef.current.getBoundingClientRect();
 
+    // Hide overlay if selected image is scrolled out of the visible editor container bounds
+    if (nodeRect.bottom < editorRect.top || nodeRect.top > editorRect.bottom) {
+      setImageBounds(null);
+      return;
+    }
+
     setImageBounds({
-      top: nodeRect.top - editorRect.top + editorRef.current.scrollTop,
-      left: nodeRect.left - editorRect.left + editorRef.current.scrollLeft,
+      top: nodeRect.top - editorRect.top,
+      left: nodeRect.left - editorRect.left,
       width: nodeRect.width,
       height: nodeRect.height
     });
   };
+
+  useEffect(() => {
+    if (!selectedImageNode) return;
+    const handleScrollOrResize = () => {
+      updateImageBounds(selectedImageNode);
+    };
+    const ed = editorRef.current;
+    if (ed) {
+      ed.addEventListener('scroll', handleScrollOrResize, { passive: true });
+    }
+    window.addEventListener('resize', handleScrollOrResize, { passive: true });
+    return () => {
+      if (ed) ed.removeEventListener('scroll', handleScrollOrResize);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [selectedImageNode]);
 
   const handleEditorDragStart = (e) => {
     const target = e.target.closest('figure, img');
@@ -241,24 +272,41 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   };
 
   const handleEditorMouseDown = (e) => {
-    // Select IMG or Text Box div for 8-point resizing & layout options
-    const targetBox = e.target?.closest?.('img, [id^="tb_"]');
-    if (targetBox && editorRef.current?.contains(targetBox) && targetBox !== editorRef.current) {
-      if (e.target.tagName === 'IMG' || targetBox.id?.startsWith('tb_')) {
-        setSelectedImageNode(targetBox);
-        updateImageBounds(targetBox);
-        // If clicking border / resize area, return early to enable drag
-        if (e.target.classList?.contains('tb-container') || e.target.tagName === 'IMG') {
-          return;
-        }
+    // Select IMG, VIDEO, IFRAME or FIGURE for 8-point resizing & layout options
+    const mediaTarget = e.target?.closest?.('img, video, iframe, figure, .video-wrapper, .img-wrapper');
+    if (mediaTarget && editorRef.current?.contains(mediaTarget) && mediaTarget !== editorRef.current) {
+      const figTarget = mediaTarget.closest('figure, .img-wrapper, .video-wrapper') || mediaTarget;
+      setSelectedImageNode(figTarget);
+      updateImageBounds(figTarget);
+      if (['IMG', 'VIDEO', 'IFRAME'].includes(e.target.tagName)) {
+        return;
       }
     }
 
-    // Dismiss image/textbox resize/layout overlay if clicking canvas
+    // Dismiss image resize/layout overlay if clicking canvas or text
     if (e.target && !e.target.closest('.image-layout-popover') && !e.target.closest('.image-resize-handle')) {
       setSelectedImageNode(null);
       setShowLayoutOptions(false);
       setImageBounds(null);
+    }
+
+    // Detect click on <a> hyperlink inside editor
+    const linkTarget = e.target?.closest?.('a');
+    if (linkTarget && editorRef.current?.contains(linkTarget)) {
+      const rect = linkTarget.getBoundingClientRect();
+      const editorRect = editorRef.current.getBoundingClientRect();
+      setActiveLinkPopover({
+        visible: true,
+        top: Math.max(0, rect.top - editorRect.top - 42),
+        left: Math.max(10, rect.left - editorRect.left),
+        url: linkTarget.getAttribute('href') || '',
+        node: linkTarget
+      });
+      if (e.ctrlKey || e.metaKey) {
+        window.open(linkTarget.href, '_blank', 'noopener,noreferrer');
+      }
+    } else if (e.target && !e.target.closest('.link-action-popover')) {
+      setActiveLinkPopover(null);
     }
 
     if (!editorRef.current) return;
@@ -435,48 +483,67 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
             const clickedRight = clickX > rect.right + 5;
             const clickedLeft = clickX < rect.left - 5;
 
-            if (clickedRight || clickedLeft) {
-              // With shape-outside, the text flows naturally. Use native caret if available.
-              if (nativeRange && anchor.contains(nativeRange.startContainer)) {
+            if (clickedLeft) {
+              const leftSlot = anchor.querySelector('.left-text-slot');
+              if (leftSlot) {
+                if (nativeRange && leftSlot.contains(nativeRange.startContainer)) {
+                  const selection = window.getSelection();
+                  if (selection) {
+                    selection.removeAllRanges();
+                    selection.addRange(nativeRange);
+                    saveSelection();
+                    if (editorRef.current) editorRef.current.focus();
+                    return;
+                  }
+                }
+                let targetText = leftSlot.firstChild;
+                if (!targetText) {
+                  targetText = document.createTextNode('\u200B');
+                  leftSlot.appendChild(targetText);
+                }
                 const selection = window.getSelection();
                 if (selection) {
+                  const range = document.createRange();
+                  const offset = targetText.nodeType === Node.TEXT_NODE ? targetText.textContent.length : 0;
+                  range.setStart(targetText, offset);
+                  range.collapse(true);
                   selection.removeAllRanges();
-                  selection.addRange(nativeRange);
+                  selection.addRange(range);
                   saveSelection();
+                  if (editorRef.current) editorRef.current.focus();
                   return;
                 }
               }
-
-              // Fallback: find a text node in the anchor to place cursor
-              let textNode = null;
-              let child = figure.nextSibling;
-              while (child) {
-                if (child.nodeType === Node.TEXT_NODE && child.textContent.length > 0) {
-                  textNode = child;
-                  break;
+            } else if (clickedRight) {
+              const rightSlot = anchor.querySelector('.right-text-slot');
+              if (rightSlot) {
+                if (nativeRange && rightSlot.contains(nativeRange.startContainer)) {
+                  const selection = window.getSelection();
+                  if (selection) {
+                    selection.removeAllRanges();
+                    selection.addRange(nativeRange);
+                    saveSelection();
+                    if (editorRef.current) editorRef.current.focus();
+                    return;
+                  }
                 }
-                if (child.nodeType === Node.ELEMENT_NODE && child.firstChild) {
-                  textNode = child.firstChild;
-                  break;
+                let targetText = rightSlot.firstChild;
+                if (!targetText) {
+                  targetText = document.createTextNode('\u200B');
+                  rightSlot.appendChild(targetText);
                 }
-                child = child.nextSibling;
-              }
-
-              if (!textNode) {
-                textNode = document.createTextNode('\u200B');
-                anchor.appendChild(textNode);
-              }
-
-              const selection = window.getSelection();
-              if (selection && textNode) {
-                const range = document.createRange();
-                const offset = textNode.nodeType === Node.TEXT_NODE ? textNode.textContent.length : 0;
-                range.setStart(textNode, offset);
-                range.collapse(true);
-                selection.removeAllRanges();
-                selection.addRange(range);
-                saveSelection();
-                return;
+                const selection = window.getSelection();
+                if (selection) {
+                  const range = document.createRange();
+                  const offset = targetText.nodeType === Node.TEXT_NODE ? targetText.textContent.length : 0;
+                  range.setStart(targetText, offset);
+                  range.collapse(true);
+                  selection.removeAllRanges();
+                  selection.addRange(range);
+                  saveSelection();
+                  if (editorRef.current) editorRef.current.focus();
+                  return;
+                }
               }
             }
           }
@@ -615,10 +682,11 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     e.stopPropagation();
     if (!selectedImageNode) return;
 
+    const img = selectedImageNode.tagName === 'IMG' ? selectedImageNode : (selectedImageNode.querySelector?.('img') || selectedImageNode);
     const startX = e.clientX;
     const startY = e.clientY;
-    const startWidth = selectedImageNode.offsetWidth;
-    const startHeight = selectedImageNode.offsetHeight;
+    const startWidth = img.offsetWidth || selectedImageNode.offsetWidth;
+    const startHeight = img.offsetHeight || selectedImageNode.offsetHeight;
     const aspectRatio = startWidth / startHeight;
 
     const handleMouseMove = (moveEvent) => {
@@ -644,19 +712,21 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         newHeight = newWidth / aspectRatio;
       }
 
-      selectedImageNode.style.width = `${Math.round(newWidth)}px`;
-      if (['nw', 'ne', 'sw', 'se'].includes(handleDirection)) {
-        selectedImageNode.style.height = 'auto'; // Maintain aspect ratio for corner resizes
+      img.style.width = `${Math.round(newWidth)}px`;
+      if (['nw', 'ne', 'sw', 'se'].includes(handleDirection) || ['e', 'w'].includes(handleDirection)) {
+        img.style.height = 'auto'; // Maintain natural aspect ratio
       } else {
-        selectedImageNode.style.height = `${Math.round(newHeight)}px`;
+        img.style.height = `${Math.round(newHeight)}px`;
       }
-      selectedImageNode.style.maxWidth = '100%';
-      const figure = selectedImageNode.parentElement?.classList.contains('img-wrapper') ? selectedImageNode.parentElement : null;
+      img.style.maxWidth = '100%';
+
+      const figure = selectedImageNode.closest('figure, .img-wrapper');
       if (figure) {
-        figure.style.width = 'auto';
+        figure.style.width = `${Math.round(newWidth)}px`;
+        figure.style.maxWidth = '100%';
         
         const anchor = figure.closest('.center-wrap-anchor');
-        if (anchor) {
+        if (anchor && figure.parentElement === anchor) {
           const leftF = anchor.querySelector('.center-float-spacer-left');
           const rightF = anchor.querySelector('.center-float-spacer-right');
           if (leftF && rightF) {
@@ -690,49 +760,181 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
   const resizeImage = (sizePercent) => {
     if (!selectedImageNode) return;
-    selectedImageNode.style.width = sizePercent;
-    selectedImageNode.style.height = 'auto';
-    selectedImageNode.style.maxWidth = '100%';
-    const figure = selectedImageNode.parentElement?.classList.contains('img-wrapper') ? selectedImageNode.parentElement : null;
+    const img = selectedImageNode.tagName === 'IMG' ? selectedImageNode : (selectedImageNode.querySelector?.('img') || selectedImageNode);
+    const figure = selectedImageNode.closest('figure, .img-wrapper') || (selectedImageNode.tagName === 'FIGURE' ? selectedImageNode : selectedImageNode.parentElement);
+
+    if (img) {
+      img.style.width = '100%';
+      img.style.height = 'auto';
+      img.style.maxWidth = '100%';
+    }
+
     if (figure) {
       if (sizePercent === '100%') {
         figure.style.width = '100%';
+        figure.style.maxWidth = '100%';
       } else {
         figure.style.width = sizePercent;
+        figure.style.maxWidth = '100%';
       }
       
       const anchor = figure.closest('.center-wrap-anchor');
       if (anchor) {
-        const leftF = anchor.querySelector('.center-float-spacer-left');
-        const rightF = anchor.querySelector('.center-float-spacer-right');
-        if (leftF && rightF) {
-          setTimeout(() => {
-            const figW = figure.offsetWidth || figure.getBoundingClientRect().width || 300;
-            const figH = figure.offsetHeight || figure.getBoundingClientRect().height || 200;
-            const gap = 16;
-            const halfImgPx = Math.ceil(figW / 2) + gap;
-            
-            leftF.style.width = '50%';
-            leftF.style.height = `${figH}px`;
-            leftF.style.shapeOutside = `inset(0 0 0 calc(100% - ${halfImgPx}px))`;
-            
-            rightF.style.width = '50%';
-            rightF.style.height = `${figH}px`;
-            rightF.style.shapeOutside = `inset(0 calc(100% - ${halfImgPx}px) 0 0)`;
-          }, 10);
-        }
+        alignImage('center');
       }
     }
     updateImageBounds(selectedImageNode);
   };
 
+  const normalizeEditorMedia = (container = editorRef.current) => {
+    if (!container) return;
+
+    // 1. Dismantle all legacy .center-wrap-anchor wrappers
+    const anchors = container.querySelectorAll('.center-wrap-anchor');
+    anchors.forEach((anchor) => {
+      const leftSlot = anchor.querySelector('.left-text-slot');
+      const rightSlot = anchor.querySelector('.right-text-slot');
+      const figure = anchor.querySelector('figure, .img-wrapper, img');
+
+      let mergedText = '';
+      if (leftSlot) {
+        mergedText += leftSlot.innerHTML.replace(/\u200B/g, '').trim() + ' ';
+        leftSlot.remove();
+      }
+      if (rightSlot) {
+        mergedText += rightSlot.innerHTML.replace(/\u200B/g, '').trim() + ' ';
+        rightSlot.remove();
+      }
+
+      if (figure && anchor.parentNode) {
+        anchor.parentNode.insertBefore(figure, anchor);
+        if (mergedText.trim()) {
+          const textP = document.createElement('p');
+          textP.style.lineHeight = '1.7';
+          textP.style.textAlign = 'left';
+          textP.style.width = '100%';
+          textP.style.display = 'block';
+          textP.style.marginTop = '16px';
+          textP.innerHTML = mergedText.trim();
+          if (figure.nextSibling) {
+            anchor.parentNode.insertBefore(textP, figure.nextSibling);
+          } else {
+            anchor.parentNode.appendChild(textP);
+          }
+        }
+      }
+      anchor.remove();
+    });
+
+    // 2. Extract any <figure> nested inside <p> tags to preserve valid HTML5 structure
+    const nestedFigures = container.querySelectorAll('p > figure, p > .img-wrapper, p > .video-wrapper');
+    nestedFigures.forEach((fig) => {
+      const parentP = fig.parentElement;
+      if (parentP && parentP.tagName === 'P') {
+        const grandParent = parentP.parentElement || container;
+        grandParent.insertBefore(fig, parentP);
+        if (!parentP.textContent?.trim() && !parentP.querySelector('img, video, iframe')) {
+          parentP.remove();
+        }
+      }
+    });
+
+    // 3. Normalize all centered figures into full-width block rows
+    const figures = container.querySelectorAll('figure, .img-wrapper, .video-wrapper');
+    figures.forEach((fig) => {
+      const isFloatLeft = fig.style.float === 'left';
+      const isFloatRight = fig.style.float === 'right';
+
+      if (!isFloatLeft && !isFloatRight) {
+        fig.classList.add('image-center');
+        fig.style.float = 'none';
+        fig.style.clear = 'both';
+        fig.style.display = 'block';
+        fig.style.width = '100%';
+        fig.style.maxWidth = '100%';
+        fig.style.margin = '16px 0';
+        fig.style.textAlign = 'center';
+
+        const innerMedia = fig.querySelector('img, video, iframe') || fig;
+        if (innerMedia && innerMedia.style) {
+          innerMedia.style.maxWidth = '100%';
+          innerMedia.style.height = 'auto';
+          innerMedia.style.display = 'block';
+          innerMedia.style.margin = '0 auto';
+          innerMedia.style.float = 'none';
+        }
+
+        const parentBlock = fig.parentElement;
+        if (parentBlock && parentBlock !== container && parentBlock.tagName === 'P') {
+          const nodesBefore = [];
+          let curr = parentBlock.firstChild;
+          while (curr && curr !== fig) {
+            nodesBefore.push(curr);
+            curr = curr.nextSibling;
+          }
+
+          const nodesAfter = [];
+          if (curr === fig) {
+            curr = fig.nextSibling;
+            while (curr) {
+              nodesAfter.push(curr);
+              curr = curr.nextSibling;
+            }
+          }
+
+          const rootTarget = parentBlock.parentNode || container;
+
+          if (nodesBefore.length > 0) {
+            const aboveP = document.createElement('p');
+            aboveP.style.lineHeight = '1.7';
+            aboveP.style.textAlign = 'left';
+            aboveP.style.width = '100%';
+            aboveP.style.display = 'block';
+            aboveP.style.marginBottom = '16px';
+            nodesBefore.forEach(n => aboveP.appendChild(n));
+            rootTarget.insertBefore(aboveP, parentBlock);
+          }
+
+          if (nodesAfter.length > 0) {
+            const belowP = document.createElement('p');
+            belowP.style.lineHeight = '1.7';
+            belowP.style.textAlign = 'left';
+            belowP.style.width = '100%';
+            belowP.style.display = 'block';
+            belowP.style.marginTop = '16px';
+            nodesAfter.forEach(n => belowP.appendChild(n));
+            if (parentBlock.nextSibling) {
+              rootTarget.insertBefore(belowP, parentBlock.nextSibling);
+            } else {
+              rootTarget.appendChild(belowP);
+            }
+          }
+
+          rootTarget.insertBefore(fig, parentBlock);
+          parentBlock.remove();
+        }
+      }
+    });
+
+    normalizeEditorLinks(container);
+  };
+
   const alignImage = (alignment) => {
     if (!selectedImageNode) return;
-    const figure = selectedImageNode.closest('.img-wrapper') || selectedImageNode.parentElement;
+    const figure = selectedImageNode.closest('figure, .img-wrapper, .video-wrapper') || (selectedImageNode.tagName === 'FIGURE' ? selectedImageNode : selectedImageNode.parentElement);
     if (figure) {
+      // If figure is nested inside a text slot of another image, safely extract figure out of the slot first
+      const insideSlot = figure.closest('.left-text-slot, .right-text-slot');
+      if (insideSlot) {
+        const parentAnchor = insideSlot.closest('.center-wrap-anchor');
+        if (parentAnchor && parentAnchor.parentElement) {
+          parentAnchor.parentElement.insertBefore(figure, parentAnchor.nextSibling);
+        }
+      }
+
       let parentBlock = figure.parentElement;
       const anchor = figure.closest('.center-wrap-anchor');
-      const isCenteredAnchor = anchor !== null;
+      const isCenteredAnchor = anchor !== null && figure.parentElement === anchor;
       
       if (isCenteredAnchor) {
         // Collect text content from the slots
@@ -760,7 +962,6 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         }
         
         anchor.remove();
-        anchor.remove();
         
         // Reset figure positioning
         figure.style.position = 'static';
@@ -773,6 +974,37 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         
         parentBlock = figure.parentElement;
       }
+
+      const setupFloatBlock = (fig, align) => {
+        fig.classList.remove('image-center');
+        fig.style.setProperty('float', align, 'important');
+        fig.style.setProperty('clear', 'none', 'important');
+        fig.style.display = 'block';
+        fig.style.margin = align === 'left' ? '12px 24px 12px 0' : '12px 0 12px 24px';
+
+        if (!fig.style.width || fig.style.width === '100%') {
+          fig.style.width = '50%';
+        }
+        fig.style.maxWidth = '100%';
+
+        const innerMedia = fig.querySelector('img, video, iframe') || fig;
+        if (innerMedia && innerMedia.style) {
+          innerMedia.style.width = '100%';
+          innerMedia.style.height = 'auto';
+          innerMedia.style.display = 'block';
+          innerMedia.style.margin = '0';
+          innerMedia.style.float = 'none';
+        }
+
+        // Ensure figure is extracted from inside any <p> tag to prevent invalid HTML nesting
+        let parentBlockNode = fig.parentElement;
+        if (parentBlockNode && parentBlockNode.tagName === 'P') {
+          const grandParent = parentBlockNode.parentElement || editorRef.current;
+          if (grandParent) {
+            grandParent.insertBefore(fig, parentBlockNode);
+          }
+        }
+      };
 
       // Detect and Dismantle Flex Layout if transitioning from center with side text pockets
       if (parentBlock && parentBlock.style.display === 'flex' && (parentBlock.querySelector('.left-text-slot') || parentBlock.querySelector('.right-text-slot'))) {
@@ -851,213 +1083,151 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         }, 10);
       }
 
-      const setupFloatBlock = (fig, align) => {
-        fig.style.float = align;
-        fig.style.margin = align === 'left' ? '12px 24px 12px 0' : '12px 0 12px 24px';
-        fig.style.clear = 'none';
-        fig.style.display = 'block';
 
-        let wrapBlock = findParentBlock(fig);
-        
-        if (wrapBlock && wrapBlock !== editorRef.current) {
-          let hasContentBefore = false;
-          let current = fig.previousSibling;
-          while(current) {
-            if (current.nodeType === Node.TEXT_NODE && current.textContent.trim().length > 0) {
-              hasContentBefore = true; break;
-            }
-            if (current.nodeType === Node.ELEMENT_NODE && current.tagName !== 'BR') {
-              hasContentBefore = true; break;
-            }
-            current = current.previousSibling;
-          }
-
-          if (hasContentBefore) {
-            let newBlock = document.createElement(wrapBlock.tagName || 'p');
-            newBlock.className = wrapBlock.className;
-            newBlock.style.cssText = wrapBlock.style.cssText;
-            
-            let sibling = fig;
-            while (sibling) {
-              let next = sibling.nextSibling;
-              newBlock.appendChild(sibling);
-              sibling = next;
-            }
-            wrapBlock.parentNode.insertBefore(newBlock, wrapBlock.nextSibling);
-            wrapBlock = newBlock;
-          } else {
-            if (wrapBlock.firstChild !== fig) {
-              wrapBlock.insertBefore(fig, wrapBlock.firstChild);
-            }
-          }
-        } else {
-          wrapBlock = document.createElement('p');
-          wrapBlock.style.marginBottom = '16px';
-          wrapBlock.style.lineHeight = '1.7';
-          wrapBlock.style.textAlign = 'left';
-          wrapBlock.style.width = '100%';
-          
-          if (fig.parentNode) {
-            fig.parentNode.insertBefore(wrapBlock, fig);
-          } else {
-            editorRef.current.appendChild(wrapBlock);
-          }
-          wrapBlock.appendChild(fig);
-        }
-
-        wrapBlock.style.textAlign = 'left';
-
-        let textAfter = fig.nextSibling;
-        if (!textAfter) {
-          textAfter = document.createTextNode('\u200B');
-          wrapBlock.appendChild(textAfter);
-        }
-      };
 
       if (alignment === 'left') {
         setupFloatBlock(figure, 'left');
       } else if (alignment === 'right') {
         setupFloatBlock(figure, 'right');
-      } else if (alignment === 'center_wrap') {
-        // ── Magazine-style center wrap: text flows around both sides ──
-        // The image stays STATIC (position:static, centered via margin:auto).
-        // Two invisible float spacers with shape-outside carve the text columns.
-        // Text typed above flows down and wraps naturally on both sides.
+      } else if (alignment === 'center' || alignment === 'center_wrap') {
+        // ── Block-Level Centered Image Layout (Dedicated Row with clear: both & DOM Normalization) ──
+        
+        let containerBlock = figure.parentElement;
 
-        // 1. Clean up any old flex/pocket layout
-        if (parentBlock) {
-          const oldLeft = parentBlock.querySelector('.left-text-slot');
-          const oldRight = parentBlock.querySelector('.right-text-slot');
+        // Clean up any old flex/pocket layout elements
+        if (containerBlock) {
+          const oldLeft = containerBlock.querySelector('.left-text-slot');
+          const oldRight = containerBlock.querySelector('.right-text-slot');
           let mergedHTML = '';
-          if (oldLeft) { mergedHTML += oldLeft.innerHTML.replace(/\u200B/g, ''); oldLeft.remove(); }
-          if (oldRight) { mergedHTML += oldRight.innerHTML.replace(/\u200B/g, ''); oldRight.remove(); }
-          parentBlock.style.display = '';
-          parentBlock.style.alignItems = '';
-          parentBlock.style.justifyContent = '';
-          parentBlock.style.flex = '';
+          if (oldLeft) { mergedHTML += oldLeft.innerHTML.replace(/\u200B/g, '').trim() + ' '; oldLeft.remove(); }
+          if (oldRight) { mergedHTML += oldRight.innerHTML.replace(/\u200B/g, '').trim() + ' '; oldRight.remove(); }
+
+          containerBlock.classList.remove('center-wrap-anchor');
+          containerBlock.removeAttribute('contenteditable');
 
           if (mergedHTML.trim()) {
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = mergedHTML.trim();
             let insertRef = figure.nextSibling;
             while (tempDiv.firstChild) {
-              parentBlock.insertBefore(tempDiv.firstChild, insertRef);
+              containerBlock.insertBefore(tempDiv.firstChild, insertRef);
             }
           }
         }
 
-        // 2. Ensure figure is inside a proper wrapper block
-        let wrapBlock = parentBlock && parentBlock !== editorRef.current ? parentBlock : null;
-        if (!wrapBlock) {
-          wrapBlock = document.createElement('p');
-          wrapBlock.style.lineHeight = '1.7';
-          wrapBlock.style.textAlign = 'left';
-          wrapBlock.style.width = '100%';
-          if (figure.parentNode) {
-            figure.parentNode.insertBefore(wrapBlock, figure);
-          } else {
-            editorRef.current.appendChild(wrapBlock);
+        // DOM Normalization: Extract text before figure into aboveP and text after figure into belowP
+        if (containerBlock && containerBlock !== editorRef.current) {
+          const nodesBefore = [];
+          let curr = containerBlock.firstChild;
+          while (curr && curr !== figure) {
+            nodesBefore.push(curr);
+            curr = curr.nextSibling;
           }
-          wrapBlock.appendChild(figure);
+
+          const nodesAfter = [];
+          if (curr === figure) {
+            curr = figure.nextSibling;
+            while (curr) {
+              nodesAfter.push(curr);
+              curr = curr.nextSibling;
+            }
+          }
+
+          const rootTarget = containerBlock.parentNode || editorRef.current;
+
+          // Insert text before figure as its own paragraph
+          if (nodesBefore.length > 0) {
+            const aboveP = document.createElement('p');
+            aboveP.style.lineHeight = '1.7';
+            aboveP.style.textAlign = 'left';
+            aboveP.style.width = '100%';
+            aboveP.style.display = 'block';
+            aboveP.style.marginBottom = '16px';
+            nodesBefore.forEach(n => aboveP.appendChild(n));
+            rootTarget.insertBefore(aboveP, containerBlock);
+          }
+
+          // Insert text after figure as its own paragraph
+          if (nodesAfter.length > 0) {
+            const belowP = document.createElement('p');
+            belowP.style.lineHeight = '1.7';
+            belowP.style.textAlign = 'left';
+            belowP.style.width = '100%';
+            belowP.style.display = 'block';
+            belowP.style.marginTop = '16px';
+            nodesAfter.forEach(n => belowP.appendChild(n));
+            if (containerBlock.nextSibling) {
+              rootTarget.insertBefore(belowP, containerBlock.nextSibling);
+            } else {
+              rootTarget.appendChild(belowP);
+            }
+          }
+
+          // Move figure out of containerBlock to root level
+          rootTarget.insertBefore(figure, containerBlock);
+          containerBlock.remove();
         }
 
-        // 3. Set up the center-wrap-anchor container
-        let anchor = wrapBlock;
-        if (!anchor.classList.contains('center-wrap-anchor')) {
-          anchor.classList.add('center-wrap-anchor');
-        }
-        anchor.style.position = 'relative';
-        anchor.style.width = '100%';
-        anchor.style.lineHeight = '1.7';
-        anchor.style.textAlign = 'left';
-        anchor.style.display = 'flex';
-        anchor.style.alignItems = 'flex-start';
-        anchor.style.justifyContent = 'space-between';
-        anchor.style.gap = '16px';
-        anchor.style.margin = '12px 0';
-        anchor.style.clear = 'both';
-
-        // 4. Remove any old spacers/slots
-        anchor.querySelectorAll('.center-float-spacer-left, .center-float-spacer-right, .left-text-slot, .right-text-slot').forEach(s => s.remove());
-
-        // 5. Setup figure flex properties
+        // Apply strict block-level styles and image-center class to figure wrapper
+        figure.classList.add('image-center');
         figure.style.float = 'none';
-        figure.style.clear = 'none';
+        figure.style.clear = 'both';
         figure.style.display = 'block';
-        figure.style.position = 'static';
-        figure.style.transform = 'none';
-        figure.style.top = 'auto';
-        figure.style.left = 'auto';
-        figure.style.margin = '0';
-        figure.style.zIndex = '1';
-        figure.style.pointerEvents = 'auto';
-        figure.style.flexShrink = '0';
-        figure.style.order = '2';
+        figure.style.width = '100%';
+        figure.style.maxWidth = '100%';
+        figure.style.margin = '16px 0';
+        figure.style.textAlign = 'center';
+        figure.style.position = 'relative';
+        figure.style.flex = '';
+        figure.style.order = '';
 
-        // 6. Create independent text slots
-        const leftSlot = document.createElement('div');
-        leftSlot.className = 'left-text-slot';
-        leftSlot.setAttribute('contenteditable', 'true');
-        leftSlot.style.flex = '1';
-        leftSlot.style.minWidth = '0';
-        leftSlot.style.order = '1';
-        leftSlot.style.outline = 'none';
-        leftSlot.innerHTML = '\u200B';
+        const innerImg = figure.querySelector('img') || figure;
+        if (innerImg && innerImg.style) {
+          innerImg.style.maxWidth = '100%';
+          innerImg.style.height = 'auto';
+          innerImg.style.display = 'block';
+          innerImg.style.margin = '0 auto';
+          innerImg.style.float = 'none';
+        }
 
-        const rightSlot = document.createElement('div');
-        rightSlot.className = 'right-text-slot';
-        rightSlot.setAttribute('contenteditable', 'true');
-        rightSlot.style.flex = '1';
-        rightSlot.style.minWidth = '0';
-        rightSlot.style.order = '3';
-        rightSlot.style.outline = 'none';
-        rightSlot.innerHTML = '\u200B';
+        if (figure.parentElement && figure.parentElement !== editorRef.current) {
+          figure.parentElement.style.textAlign = 'center';
+        }
 
-        anchor.insertBefore(leftSlot, figure);
-        anchor.appendChild(rightSlot);
-
-        // 7. Ensure there's a paragraph ABOVE this anchor for the user to type in
-        const prevSibling = anchor.previousElementSibling;
-        if (!prevSibling || (prevSibling.tagName !== 'P' && prevSibling.tagName !== 'DIV') || prevSibling.querySelector('figure, .img-wrapper')) {
+        // Ensure clean paragraph ABOVE figure if needed
+        let prevSibling = figure.previousElementSibling;
+        if (!prevSibling || prevSibling.querySelector?.('img')) {
           const aboveP = document.createElement('p');
-          aboveP.className = 'article-above-center-img';
           aboveP.style.lineHeight = '1.7';
           aboveP.style.textAlign = 'left';
           aboveP.style.width = '100%';
+          aboveP.style.display = 'block';
           aboveP.style.minHeight = '28px';
           aboveP.style.outline = 'none';
-          aboveP.style.marginBottom = '0';
+          aboveP.style.marginBottom = '16px';
           aboveP.innerHTML = '\u200B';
-          anchor.parentNode.insertBefore(aboveP, anchor);
+          if (figure.parentNode) {
+            figure.parentNode.insertBefore(aboveP, figure);
+          }
         }
-        
-        // 8. Ensure there's a paragraph BELOW this anchor for the user to type in
-        const nextSibling = anchor.nextElementSibling;
-        if (!nextSibling || (nextSibling.tagName !== 'P' && nextSibling.tagName !== 'DIV') || nextSibling.querySelector('figure, .img-wrapper')) {
+
+        // Ensure clean paragraph BELOW figure if needed
+        let nextSibling = figure.nextElementSibling;
+        if (!nextSibling || nextSibling.querySelector?.('img')) {
           const belowP = document.createElement('p');
-          belowP.className = 'article-below-center-img';
           belowP.style.lineHeight = '1.7';
           belowP.style.textAlign = 'left';
           belowP.style.width = '100%';
+          belowP.style.display = 'block';
           belowP.style.minHeight = '28px';
           belowP.style.outline = 'none';
-          belowP.style.marginTop = '0';
+          belowP.style.marginTop = '16px';
           belowP.innerHTML = '\u200B';
-          
-          if (anchor.nextSibling) {
-            anchor.parentNode.insertBefore(belowP, anchor.nextSibling);
-          } else {
-            anchor.parentNode.appendChild(belowP);
+          if (figure.nextSibling) {
+            figure.parentNode.insertBefore(belowP, figure.nextSibling);
+          } else if (figure.parentNode) {
+            figure.parentNode.appendChild(belowP);
           }
-        }
-      } else { // 'center' or banner
-        figure.style.float = 'none';
-        figure.style.margin = '12px auto';
-        figure.style.clear = 'both';
-        figure.style.display = 'block';
-        figure.style.textAlign = 'center';
-        if (parentBlock && (parentBlock.tagName === 'P' || parentBlock.tagName === 'DIV')) {
-          parentBlock.style.textAlign = 'center';
         }
       }
     }
@@ -1254,18 +1424,32 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     updateImageBounds(selectedImageNode);
   };
 
-  const removeSelectedImage = () => {
+  const removeSelectedMedia = () => {
     if (!selectedImageNode) return;
-    const parent = selectedImageNode.parentElement;
-    if (parent && parent.classList.contains('img-wrapper')) {
-      parent.remove();
-    } else {
-      selectedImageNode.remove();
+    const figure = selectedImageNode.closest('figure, .img-wrapper, .video-wrapper') || selectedImageNode;
+    const anchor = figure?.closest('.center-wrap-anchor');
+    if (anchor) {
+      anchor.remove();
+    } else if (figure) {
+      figure.remove();
     }
     setSelectedImageNode(null);
     setShowLayoutOptions(false);
     setImageBounds(null);
     setActiveTab('Home');
+    setFormData(prev => ({ ...prev, content: editorRef.current?.innerHTML || '' }));
+  };
+
+  const applyVideoStyle = (styleObj) => {
+    if (!selectedImageNode) return;
+    const mediaEl = selectedImageNode.tagName === 'VIDEO' || selectedImageNode.tagName === 'IFRAME'
+      ? selectedImageNode
+      : (selectedImageNode.querySelector?.('video, iframe') || selectedImageNode);
+
+    if (mediaEl && styleObj) {
+      Object.assign(mediaEl.style, styleObj);
+    }
+    setFormData(prev => ({ ...prev, content: editorRef.current?.innerHTML || '' }));
   };
 
   const [formData, setFormData] = useState({
@@ -1301,13 +1485,34 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   const [imageCaptionInput, setImageCaptionInput] = useState('');
   const [imageAlignInput, setImageAlignInput] = useState('center');
 
+  // Video Insert Sub-Modals & Dropdown State
+  const [showVideosMenu, setShowVideosMenu] = useState(false);
+  const [showStockVideoModal, setShowStockVideoModal] = useState(false);
+  const [showOnlineVideoModal, setShowOnlineVideoModal] = useState(false);
+  const [videoUrlInput, setVideoUrlInput] = useState('');
+  const [videoCaptionInput, setVideoCaptionInput] = useState('');
+
+  // Link Sub-Modal & Floating Popover State
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [linkUrlInput, setLinkUrlInput] = useState('');
+  const [linkTextInput, setLinkTextInput] = useState('');
+  const [selectedLinkNode, setSelectedLinkNode] = useState(null);
+  const [activeLinkPopover, setActiveLinkPopover] = useState(null);
+  const [isImageLinkEditing, setIsImageLinkEditing] = useState(false);
+
   // Selection Floating Toolbar State
   const [floatingTool, setFloatingTool] = useState({ visible: false, top: 0, left: 0 });
+  const [showFloatingColorPicker, setShowFloatingColorPicker] = useState(false);
+  const [showFloatingHighlightPicker, setShowFloatingHighlightPicker] = useState(false);
 
+  const [isSaving, setIsSaving] = useState(false);
+  const blobUrlsRef = useRef([]);
   const editorRef = useRef(null);
   const fileInputRef = useRef(null);
+  const videoFileInputRef = useRef(null);
   const headerBannerInputRef = useRef(null);
   const picturesMenuRef = useRef(null);
+  const videosMenuRef = useRef(null);
   const textBoxMenuRef = useRef(null);
   const fontFamilyMenuRef = useRef(null);
   const colorPickerRef = useRef(null);
@@ -1342,6 +1547,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
       });
       if (editorRef.current) {
         editorRef.current.innerHTML = articleToEdit.content || '';
+        normalizeEditorMedia(editorRef.current);
       }
     } else {
       setFormData({
@@ -1362,45 +1568,73 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     }
   }, [articleToEdit, isOpen, currentUser]);
 
+  // Auto-switch ribbon tab to 'Video Format' or 'Picture Format' when media is selected
+  useEffect(() => {
+    if (selectedImageNode) {
+      const isVideo = selectedImageNode.tagName === 'VIDEO' ||
+        selectedImageNode.tagName === 'IFRAME' ||
+        selectedImageNode.classList?.contains('video-wrapper') ||
+        !!selectedImageNode.querySelector?.('video, iframe');
+
+      if (isVideo) {
+        setActiveTab('Video Format');
+      } else {
+        setActiveTab('Picture Format');
+      }
+    } else {
+      if (activeTab === 'Picture Format' || activeTab === 'Video Format') {
+        setActiveTab('Home');
+      }
+    }
+  }, [selectedImageNode]);
+
   // Persistent 2-way comments auto-fetch & 8-second polling for real-time discussion thread
   useEffect(() => {
     if (!isOpen || !articleToEdit?.id) return;
     let isMounted = true;
 
     const loadComments = async () => {
-      if (fetchArticleComments) {
-        const comments = await fetchArticleComments(articleToEdit.id);
-        if (isMounted && Array.isArray(comments)) {
-          setFormData(prev => {
-            const prevComments = prev.comments || [];
-            if (prevComments.length === comments.length &&
-                JSON.stringify(prevComments.map(c => c.id)) === JSON.stringify(comments.map(c => c.id))) {
-              return prev;
-            }
-            return { ...prev, comments };
-          });
+      try {
+        if (fetchArticleComments) {
+          const comments = await fetchArticleComments(articleToEdit.id);
+          if (isMounted && Array.isArray(comments)) {
+            setFormData(prev => {
+              const prevComments = prev.comments || [];
+              if (prevComments.length === comments.length &&
+                  JSON.stringify(prevComments.map(c => c.id)) === JSON.stringify(comments.map(c => c.id))) {
+                return prev;
+              }
+              return { ...prev, comments };
+            });
+          }
         }
-      }
-      if (markArticleCommentsRead) {
-        await markArticleCommentsRead(articleToEdit.id);
+        if (markArticleCommentsRead) {
+          await markArticleCommentsRead(articleToEdit.id);
+        }
+      } catch (err) {
+        console.warn("Failed to load comments (suppressed):", err?.message || err);
       }
     };
 
-    loadComments();
+    loadComments().catch(() => {});
 
     const interval = setInterval(async () => {
-      if (fetchArticleComments) {
-        const freshComments = await fetchArticleComments(articleToEdit.id);
-        if (isMounted && Array.isArray(freshComments)) {
-          setFormData(prev => {
-            const prevComments = prev.comments || [];
-            if (prevComments.length === freshComments.length &&
-                JSON.stringify(prevComments.map(c => c.id)) === JSON.stringify(freshComments.map(c => c.id))) {
-              return prev;
-            }
-            return { ...prev, comments: freshComments };
-          });
+      try {
+        if (fetchArticleComments && isMounted) {
+          const freshComments = await fetchArticleComments(articleToEdit.id);
+          if (isMounted && Array.isArray(freshComments)) {
+            setFormData(prev => {
+              const prevComments = prev.comments || [];
+              if (prevComments.length === freshComments.length &&
+                  JSON.stringify(prevComments.map(c => c.id)) === JSON.stringify(freshComments.map(c => c.id))) {
+                return prev;
+              }
+              return { ...prev, comments: freshComments };
+            });
+          }
         }
+      } catch (err) {
+        console.warn("Failed to poll comments (suppressed):", err?.message || err);
       }
     }, 8000);
 
@@ -1466,6 +1700,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (picturesMenuRef.current && !picturesMenuRef.current.contains(e.target)) setShowPicturesMenu(false);
+      if (videosMenuRef.current && !videosMenuRef.current.contains(e.target)) setShowVideosMenu(false);
       if (textBoxMenuRef.current && !textBoxMenuRef.current.contains(e.target)) setShowTextBoxMenu(false);
       if (fontFamilyMenuRef.current && !fontFamilyMenuRef.current.contains(e.target)) setShowFontFamilyMenu(false);
       if (colorPickerRef.current && !colorPickerRef.current.contains(e.target)) setShowColorPicker(false);
@@ -1533,13 +1768,97 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         target.style.clear = 'both';
         target.style.textAlign = 'left';
         target.style.marginLeft = '0';
-        target.style.float = 'none';
       }
     }
   };
 
+  // Handle Paste Event: Strips external white background boxes & dark text colors, preserving clean text & sky-blue links matching Image 2
+  const handlePaste = (e) => {
+    e.preventDefault();
+
+    const htmlText = e.clipboardData?.getData('text/html');
+    const plainText = e.clipboardData?.getData('text/plain');
+
+    if (htmlText) {
+      try {
+        const doc = new DOMParser().parseFromString(htmlText, 'text/html');
+        
+        // Strip inline background-color, color, font-family, background, class, and id from external DOM elements
+        const allElements = doc.body.querySelectorAll('*');
+        allElements.forEach(el => {
+          el.removeAttribute('class');
+          el.removeAttribute('id');
+          el.removeAttribute('bgcolor');
+          
+          if (el.style) {
+            el.style.backgroundColor = '';
+            el.style.background = '';
+            el.style.color = '';
+            el.style.fontFamily = '';
+            if (!el.getAttribute('style')) {
+              el.removeAttribute('style');
+            }
+          }
+        });
+
+        const cleanHtml = doc.body.innerHTML.trim();
+        if (cleanHtml && document.queryCommandSupported && document.queryCommandSupported('insertHTML')) {
+          document.execCommand('insertHTML', false, cleanHtml);
+          if (editorRef.current) {
+            setFormData(prev => ({ ...prev, content: editorRef.current.innerHTML }));
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn("HTML paste parse warning, falling back to plain text:", err);
+      }
+    }
+
+    // Fallback or Plain Text Paste
+    if (plainText) {
+      if (document.queryCommandSupported && document.queryCommandSupported('insertText')) {
+        document.execCommand('insertText', false, plainText);
+      } else {
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount) return;
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        const textNode = document.createTextNode(plainText);
+        range.insertNode(textNode);
+        range.setStartAfter(textNode);
+        range.setEndAfter(textNode);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      if (editorRef.current) {
+        setFormData(prev => ({ ...prev, content: editorRef.current.innerHTML }));
+      }
+    }
+  };
+
+
+  const handlePasteButtonClick = async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+          if (editorRef.current) editorRef.current.focus();
+          document.execCommand('insertText', false, text);
+          if (editorRef.current) {
+            setFormData(prev => ({ ...prev, content: editorRef.current.innerHTML }));
+          }
+          return;
+        }
+      }
+    } catch (err) {
+      // Fallback
+    }
+    execCmd('paste');
+  };
+
   // Keyboard shortcut & Enter key listener
   const handleKeyDown = (e) => {
+
 
     if ((e.ctrlKey || e.metaKey) && (e.key === 'j' || e.key === 'J')) {
       e.preventDefault();
@@ -1561,48 +1880,31 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         const figure = editorRef.current?.querySelector('figure, .img-wrapper');
         const isFigureSelected = selectedImageNode || (anchorNode && (anchorNode.tagName === 'IMG' || anchorNode.classList?.contains('img-wrapper')));
 
-        // CASE 1: Pressing Enter while editing in Left/Right pocket or on Center Image
-        if (activeSlot || isFigureSelected) {
+        // CASE 1: Pressing Enter while editing inside a Left/Right text slot of a centered 3-region image
+        if (activeSlot) {
           e.preventDefault();
           e.stopPropagation();
 
-          // Clean up any inner <p> or <div> inserted by browser in activeSlot
-          if (activeSlot) {
-            const blocks = activeSlot.querySelectorAll('p, div');
-            blocks.forEach(b => {
-              const text = b.textContent;
-              b.replaceWith(document.createTextNode(text));
-            });
+          // Insert a clean line break inside the active slot so author can write multiple lines in the pocket
+          document.execCommand('insertHTML', false, '<br><span style="display:none">&#8203;</span>');
+          return;
+        }
+
+        // CASE 2: Pressing Enter while an image element itself is selected (selectedImageNode is IMG)
+        if (isFigureSelected) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const targetFigure = selectedImageNode?.closest?.('figure, .img-wrapper') || selectedImageNode || figure;
+          let targetRow = targetFigure;
+          while (targetRow && targetRow.parentNode && targetRow.parentNode !== editorRef.current) {
+            targetRow = targetRow.parentNode;
           }
 
-          let centerRow = activeSlot ? activeSlot.parentElement : (figure ? figure.parentElement : null);
-          if (!centerRow || centerRow === editorRef.current || centerRow.classList?.contains('editor-body')) {
-            centerRow = activeSlot?.closest('p, div') || figure?.closest('p, div');
-          }
-          
-          let targetRow = centerRow || figure;
-
-          // Ensure targetRow is direct child of editorRef.current
-          if (targetRow && editorRef.current?.contains(targetRow)) {
-            while (targetRow.parentNode && targetRow.parentNode !== editorRef.current) {
-              targetRow = targetRow.parentNode;
-            }
-          }
-
-          if (!targetRow || targetRow === editorRef.current) {
-            targetRow = figure || editorRef.current.lastElementChild;
-          }
-
-          // Create or find belowP
           let belowP = targetRow?.nextElementSibling;
-          while (belowP && (belowP.tagName !== 'P' && belowP.tagName !== 'DIV')) {
-            belowP = belowP.nextElementSibling;
-          }
-
-          if (!belowP || belowP.tagName !== 'P' || belowP.classList?.contains('left-text-slot') || belowP.classList?.contains('right-text-slot') || !editorRef.current.contains(belowP)) {
+          if (!belowP || belowP.tagName !== 'P' || !editorRef.current.contains(belowP)) {
             belowP = document.createElement('p');
             belowP.className = 'article-continuation-p';
-            belowP.style.clear = 'both';
             belowP.style.marginTop = '16px';
             belowP.style.marginBottom = '16px';
             belowP.style.lineHeight = '1.7';
@@ -1611,6 +1913,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
             belowP.style.display = 'block';
             belowP.style.minHeight = '28px';
             belowP.style.outline = 'none';
+            belowP.style.clear = 'none';
             belowP.innerHTML = '\u200B';
 
             if (targetRow && targetRow.parentNode === editorRef.current) {
@@ -1641,8 +1944,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
           return;
         }
 
-        // CASE 2: Pressing Enter while ALREADY BELOW the image in document flow
-        // Intercept to create a clean new line moving DOWN AGAIN AND AGAIN with VISIBLE CURSOR
+        // CASE 3: Pressing Enter inside standard text / paragraphs wrapping floated images
         let node = anchorNode?.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : anchorNode;
         let currentP = node?.closest?.('p, div, h1, h2, h3, blockquote');
         
@@ -1661,7 +1963,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
           const newP = document.createElement('p');
           newP.className = 'article-continuation-p';
-          newP.style.clear = 'both';
+          newP.style.clear = 'none'; // Crucial: clear:none allows paragraph to wrap beside float-left/float-right images!
           newP.style.marginTop = '16px';
           newP.style.marginBottom = '16px';
           newP.style.lineHeight = '1.7';
@@ -1708,124 +2010,6 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
   const handleEditorInput = () => {
     saveSelection();
-
-    // Dynamically clamp left and right text slots to rendered image height
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0) {
-      let node = selection.anchorNode;
-      let targetEl = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-      
-      const activeSlot = targetEl?.closest?.('.left-text-slot, .right-text-slot');
-      if (activeSlot) {
-        let centerRow = activeSlot.closest('p, div');
-        if (centerRow === editorRef.current || centerRow?.classList?.contains('editor-body')) {
-          centerRow = activeSlot.parentElement;
-        }
-        const figure = centerRow?.querySelector('figure, .img-wrapper') || editorRef.current?.querySelector('figure, .img-wrapper');
-        const figH = figure ? (figure.offsetHeight || figure.getBoundingClientRect().height) : 0;
-        
-        if (figH > 0) {
-          activeSlot.style.maxHeight = `${figH}px`;
-          activeSlot.style.overflow = 'hidden';
-          activeSlot.style.wordBreak = 'break-all';
-          activeSlot.style.overflowWrap = 'anywhere';
-
-          // Auto-Flow logic for left pocket when text reaches the bottom edge of the image
-          if (activeSlot.classList.contains('left-text-slot') && activeSlot.scrollHeight > figH + 2) {
-             let lastTextNode = null;
-             const walk = document.createTreeWalker(activeSlot, NodeFilter.SHOW_TEXT, null, false);
-             let n;
-             while ((n = walk.nextNode())) {
-                if (n.textContent.trim().length > 0) {
-                   lastTextNode = n;
-                }
-             }
-
-             if (lastTextNode) {
-                const text = lastTextNode.textContent;
-                const isCursorInLastNode = (selection.anchorNode === lastTextNode || selection.focusNode === lastTextNode);
-                const cursorOffset = selection.anchorOffset;
-
-                const trimmed = text.trimEnd();
-                const lastSpaceIndex = trimmed.lastIndexOf(' ');
-                let wordToMove = text;
-                let newText = '';
-                
-                if (lastSpaceIndex !== -1) {
-                    wordToMove = text.substring(lastSpaceIndex + 1);
-                    newText = text.substring(0, lastSpaceIndex + 1);
-                } else {
-                    wordToMove = text;
-                    newText = '';
-                }
-                
-                if (wordToMove.trim().length > 0) {
-                   lastTextNode.textContent = newText;
-                   
-                   let targetRow = centerRow;
-                   if (targetRow && editorRef.current?.contains(targetRow)) {
-                     while (targetRow.parentNode && targetRow.parentNode !== editorRef.current) {
-                       targetRow = targetRow.parentNode;
-                     }
-                   }
-                   if (!targetRow || targetRow === editorRef.current) {
-                     targetRow = figure || editorRef.current.lastElementChild;
-                   }
-
-                   let belowP = targetRow?.nextElementSibling;
-                   while (belowP && (belowP.tagName !== 'P' && belowP.tagName !== 'DIV')) {
-                       belowP = belowP.nextElementSibling;
-                   }
-
-                   if (!belowP || belowP.tagName !== 'P' || belowP.classList.contains('left-text-slot') || !editorRef.current.contains(belowP)) {
-                       belowP = document.createElement('p');
-                       belowP.className = 'article-continuation-p';
-                       belowP.style.clear = 'both';
-                       belowP.style.marginTop = '16px';
-                       belowP.style.marginBottom = '16px';
-                       belowP.style.lineHeight = '1.7';
-                       belowP.style.textAlign = 'left';
-                       belowP.style.width = '100%';
-                       belowP.style.display = 'block';
-                       belowP.style.minHeight = '28px';
-                       belowP.style.outline = 'none';
-                       belowP.innerHTML = '\u200B';
-                       
-                       if (targetRow && targetRow.parentNode === editorRef.current) {
-                         targetRow.after(belowP);
-                       } else {
-                         editorRef.current.appendChild(belowP);
-                       }
-                   }
-                   
-                   let targetTextNode = belowP.firstChild;
-                   if (!targetTextNode || targetTextNode.nodeType !== Node.TEXT_NODE) {
-                       targetTextNode = document.createTextNode('');
-                       if (belowP.firstChild) {
-                          belowP.insertBefore(targetTextNode, belowP.firstChild);
-                       } else {
-                          belowP.appendChild(targetTextNode);
-                       }
-                   }
-                   
-                   const originalText = targetTextNode.textContent.replace('\u200B', '');
-                   targetTextNode.textContent = wordToMove + originalText;
-                   
-                   if (isCursorInLastNode && cursorOffset >= newText.length) {
-                      const cursorRelativeOffset = cursorOffset - newText.length;
-                      const newRange = document.createRange();
-                      newRange.setStart(targetTextNode, Math.min(cursorRelativeOffset, targetTextNode.textContent.length));
-                      newRange.collapse(true);
-                      selection.removeAllRanges();
-                      selection.addRange(newRange);
-                      saveSelection();
-                   }
-                }
-             }
-          }
-        }
-      }
-    }
   };
 
   // Selection change listener for floating menu & saving range
@@ -1849,14 +2033,19 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
       const selection = window.getSelection();
       if (!selection || selection.isCollapsed || !editorRef.current) {
         setFloatingTool(prev => ({ ...prev, visible: false }));
+        setShowFloatingColorPicker(false);
+        setShowFloatingHighlightPicker(false);
         return;
       }
 
       const range = selection.getRangeAt(0);
       if (!editorRef.current.contains(range.commonAncestorContainer)) {
         setFloatingTool(prev => ({ ...prev, visible: false }));
+        setShowFloatingColorPicker(false);
+        setShowFloatingHighlightPicker(false);
         return;
       }
+
 
       const rect = range.getBoundingClientRect();
       const editorRect = editorRef.current.getBoundingClientRect();
@@ -1884,17 +2073,45 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     }
   };
 
-  // Device File Selector (Base64)
+  // Device File Selector (Compressed to prevent memory crashes)
   const handleDeviceFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const base64Url = event.target?.result;
-      if (base64Url) {
-        insertImageHtml(base64Url, file.name.replace(/\.[^/.]+$/, ""), 'center');
-      }
+      const rawBase64 = event.target?.result;
+      if (!rawBase64) return;
+
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1200;
+        const MAX_HEIGHT = 1200;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = Math.round(height * (MAX_WIDTH / width));
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = Math.round(width * (MAX_HEIGHT / height));
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const compressedUrl = canvas.toDataURL('image/jpeg', 0.82);
+        insertImageHtml(compressedUrl, file.name.replace(/\.[^/.]+$/, ""), 'center');
+      };
+      img.src = rawBase64;
     };
     reader.readAsDataURL(file);
     setShowPicturesMenu(false);
@@ -1905,14 +2122,46 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     restoreSelection();
     if (!editorRef.current) return;
 
+    // Check if cursor is currently inside a text slot, figure, or center wrap anchor
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      const container = range.startContainer;
+      const el = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
+      const nestedContainer = el?.closest?.('.left-text-slot, .right-text-slot, figure, .img-wrapper, .center-wrap-anchor');
+      
+      if (nestedContainer) {
+        const topAnchor = nestedContainer.closest('.center-wrap-anchor') || nestedContainer.closest('figure, .img-wrapper') || nestedContainer;
+        if (topAnchor && topAnchor.parentElement) {
+          const newP = document.createElement('p');
+          newP.style.lineHeight = '1.7';
+          newP.style.marginBottom = '12px';
+          newP.innerHTML = '\u200B';
+          if (topAnchor.nextSibling) {
+            topAnchor.parentElement.insertBefore(newP, topAnchor.nextSibling);
+          } else {
+            topAnchor.parentElement.appendChild(newP);
+          }
+          const newRange = document.createRange();
+          newRange.setStart(newP, 0);
+          newRange.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(newRange);
+          if (typeof saveSelection === 'function') {
+            saveSelection();
+          }
+        }
+      }
+    }
+
     const captionHtml = caption ? `<figcaption contenteditable="true" style="font-size: 13px; color: #94a3b8; font-style: italic; text-align: center; margin-top: 8px;">${caption}</figcaption>` : '';
     const imgStyles = 'max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.3); display: block;';
     
     let wrapperStyles;
     if (align === 'left') {
-      wrapperStyles = 'margin: 12px 24px 12px 0; float: left; clear: none; max-width: 50%;';
+      wrapperStyles = 'margin: 12px 24px 12px 0; float: left; clear: none; max-width: 50%; display: block;';
     } else if (align === 'right') {
-      wrapperStyles = 'margin: 12px 0 12px 24px; float: right; clear: none; max-width: 50%;';
+      wrapperStyles = 'margin: 12px 0 12px 24px; float: right; clear: none; max-width: 50%; display: block;';
     } else {
       wrapperStyles = 'margin: 12px auto; display: block; clear: both; text-align: center; max-width: 100%;';
     }
@@ -1922,8 +2171,363 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     document.execCommand('insertHTML', false, imgHtml);
 
     setTimeout(() => {
+      const allImgs = editorRef.current?.querySelectorAll('img');
+      const newlyInsertedImg = allImgs ? allImgs[allImgs.length - 1] : null;
+      if (newlyInsertedImg && (align === 'center' || align === 'center_wrap')) {
+        setSelectedImageNode(newlyInsertedImg);
+        alignImage('center');
+      }
       setFormData(prev => ({ ...prev, content: editorRef.current.innerHTML }));
     }, 50);
+  };
+
+  // ── VIDEO INSERTION HANDLERS (Instant Device Preview + Server Sync) ──
+  const handleVideoFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setShowVideosMenu(false);
+
+    try {
+      // 1. Instantly create local Blob URL so video is 100% visible and playable in editor immediately
+      const tempBlobUrl = URL.createObjectURL(file);
+      blobUrlsRef.current.push(tempBlobUrl);
+      const uniqueId = 'vid-' + Date.now();
+      
+      insertVideoHtml(tempBlobUrl, file.name.replace(/\.[^/.]+$/, ''), 'video', uniqueId);
+
+      // 2. Upload file in background to /api/upload to generate persistent server URL
+      const uploadData = new FormData();
+      uploadData.append('file', file);
+
+      fetch('/api/upload', {
+        method: 'POST',
+        body: uploadData
+      }).then(res => res.json()).then(json => {
+        if (json.success && json.url && editorRef.current) {
+          const fig = editorRef.current.querySelector(`#${uniqueId}`);
+          if (fig) {
+            const vidEl = fig.querySelector('video');
+            const sourceEl = fig.querySelector('source');
+            if (vidEl) {
+              vidEl.setAttribute('data-server-src', json.url);
+            }
+            if (sourceEl) {
+              sourceEl.setAttribute('data-server-src', json.url);
+            }
+          }
+        }
+      }).catch(err => console.warn('Background upload warning:', err));
+
+    } catch (err) {
+      console.error("Video File Handling Error:", err);
+    }
+  };
+
+  const insertStockVideo = (videoUrl, title) => {
+    insertVideoHtml(videoUrl, title || 'Stock Video Clip', 'video');
+    setShowStockVideoModal(false);
+  };
+
+  const insertOnlineVideo = () => {
+    if (!videoUrlInput.trim()) return;
+    let url = videoUrlInput.trim();
+    let type = 'video';
+
+    // Parse YouTube / Vimeo or Embed iframe
+    if (url.includes('<iframe') && url.includes('src=')) {
+      const match = url.match(/src=["']([^"']+)["']/);
+      if (match && match[1]) {
+        url = match[1];
+        type = 'iframe';
+      }
+    } else if (url.includes('youtube.com/watch') || url.includes('youtu.be/')) {
+      let videoId = '';
+      if (url.includes('youtu.be/')) {
+        videoId = url.split('youtu.be/')[1]?.split('?')[0];
+      } else if (url.includes('v=')) {
+        videoId = url.split('v=')[1]?.split('&')[0];
+      }
+      if (videoId) {
+        url = `https://www.youtube.com/embed/${videoId}`;
+        type = 'iframe';
+      }
+    } else if (url.includes('vimeo.com/')) {
+      const vimeoId = url.split('vimeo.com/')[1]?.split('?')[0];
+      if (vimeoId) {
+        url = `https://player.vimeo.com/video/${vimeoId}`;
+        type = 'iframe';
+      }
+    }
+
+    insertVideoHtml(url, videoCaptionInput || 'Online Video', type);
+    setShowOnlineVideoModal(false);
+    setVideoUrlInput('');
+    setVideoCaptionInput('');
+  };
+
+  const insertVideoHtml = (src, captionText = '', type = 'video', customId = null) => {
+    restoreSelection();
+    if (!editorRef.current) return;
+    const uniqueId = customId || ('vid-' + Date.now());
+
+    let mediaElHtml = '';
+    if (type === 'iframe' || src.includes('embed') || src.includes('player.vimeo')) {
+      mediaElHtml = `<iframe src="${src}" frameborder="0" allowfullscreen style="width: 100%; aspect-ratio: 16/9; max-width: 720px; display: block; margin: 0 auto; border-radius: 8px; border: none; box-shadow: 0 4px 20px rgba(0,0,0,0.4);"></iframe>`;
+    } else {
+      mediaElHtml = `<video controls preload="metadata" src="${src}" style="max-width: 100%; height: auto; display: block; margin: 0 auto; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);"><source src="${src}" type="video/mp4" /></video>`;
+    }
+
+    const captionHtml = `<figcaption contenteditable="true" style="font-size: 13px; color: #94a3b8; font-style: italic; text-align: center; margin-top: 8px;">${captionText || 'Type video caption here...'}</figcaption>`;
+
+    const videoHtml = `
+      <figure id="${uniqueId}" class="video-wrapper img-wrapper image-center" style="display: block; width: 100%; max-width: 100%; clear: both; float: none; margin: 16px 0; text-align: center;">
+        ${mediaElHtml}
+        ${captionHtml}
+      </figure><p style="display: block; width: 100%; line-height: 1.7; text-align: left; margin-top: 16px;">\u200B</p>`;
+
+    execCmd('insertHTML', videoHtml);
+    setShowVideosMenu(false);
+
+    setTimeout(() => {
+      if (editorRef.current) {
+        normalizeEditorMedia(editorRef.current);
+        const newFig = editorRef.current.querySelector(`#${uniqueId}`) || editorRef.current.querySelector('.video-wrapper:last-of-type');
+        if (newFig) {
+          setSelectedImageNode(newFig);
+          updateImageBounds(newFig);
+        }
+        setFormData(prev => ({ ...prev, content: editorRef.current.innerHTML }));
+      }
+    }, 50);
+  };
+
+  // ── LINK INSERTION & NORMALIZATION HANDLERS ──
+  const normalizeEditorLinks = (container = editorRef.current) => {
+    if (!container) return;
+
+    // 1. Ensure all existing <a> tags have target="_blank" and rel="noopener noreferrer"
+    const existingLinks = container.querySelectorAll('a');
+    existingLinks.forEach(a => {
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noopener noreferrer');
+      if (!a.classList.contains('article-link')) {
+        a.classList.add('article-link');
+      }
+      a.style.color = '#38bdf8';
+      a.style.textDecoration = 'underline';
+      a.style.cursor = 'pointer';
+    });
+
+    // 2. Auto-convert plain text URLs (e.g. https://instagram.com/...) into <a> tags
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+    const textNodesToProcess = [];
+    let currentNode;
+    while ((currentNode = walker.nextNode())) {
+      if (currentNode.parentElement?.tagName === 'A' || currentNode.parentElement?.tagName === 'STYLE' || currentNode.parentElement?.tagName === 'SCRIPT') {
+        continue;
+      }
+      if (/https?:\/\/[^\s<]+/i.test(currentNode.nodeValue)) {
+        textNodesToProcess.push(currentNode);
+      }
+    }
+
+    textNodesToProcess.forEach(textNode => {
+      const parent = textNode.parentNode;
+      if (!parent) return;
+
+      const text = textNode.nodeValue;
+      const urlRegex = /(https?:\/\/[^\s()<]+(?:\([\w\d]+\)|([^[:punct:]\s]|\/)))/gi;
+      let lastIndex = 0;
+      let match;
+      const frag = document.createDocumentFragment();
+
+      while ((match = urlRegex.exec(text)) !== null) {
+        const matchText = match[0];
+        const matchIndex = match.index;
+
+        if (matchIndex > lastIndex) {
+          frag.appendChild(document.createTextNode(text.substring(lastIndex, matchIndex)));
+        }
+
+        const linkEl = document.createElement('a');
+        linkEl.href = matchText;
+        linkEl.target = '_blank';
+        linkEl.rel = 'noopener noreferrer';
+        linkEl.className = 'article-link';
+        linkEl.style.color = '#38bdf8';
+        linkEl.style.textDecoration = 'underline';
+        linkEl.style.cursor = 'pointer';
+        linkEl.textContent = matchText;
+        frag.appendChild(linkEl);
+
+        lastIndex = matchIndex + matchText.length;
+      }
+
+      if (lastIndex < text.length) {
+        frag.appendChild(document.createTextNode(text.substring(lastIndex)));
+      }
+
+      parent.replaceChild(frag, textNode);
+    });
+  };
+
+  const openImageLinkModal = () => {
+    if (!selectedImageNode) return;
+    const imgEl = selectedImageNode.tagName === 'IMG'
+      ? selectedImageNode
+      : selectedImageNode.querySelector?.('img');
+
+    if (!imgEl) return;
+
+    const parentLink = imgEl.closest('a');
+    setSelectedLinkNode(parentLink || null);
+    setLinkUrlInput(parentLink ? (parentLink.getAttribute('href') || '') : '');
+    setLinkTextInput('');
+    setIsImageLinkEditing(true);
+    setShowLinkModal(true);
+  };
+
+  const openLinkModal = () => {
+    restoreSelection();
+    setIsImageLinkEditing(false);
+    const sel = window.getSelection();
+    let linkEl = null;
+
+    if (sel && sel.rangeCount > 0) {
+      const container = sel.getRangeAt(0).startContainer;
+      linkEl = container.nodeType === Node.TEXT_NODE ? container.parentElement?.closest('a') : container.closest('a');
+    }
+
+    if (linkEl && editorRef.current?.contains(linkEl)) {
+      setSelectedLinkNode(linkEl);
+      setLinkUrlInput(linkEl.getAttribute('href') || '');
+      setLinkTextInput(linkEl.textContent || '');
+    } else {
+      setSelectedLinkNode(null);
+      setLinkUrlInput('');
+      setLinkTextInput(sel?.toString() || '');
+    }
+
+    setShowLinkModal(true);
+  };
+
+  const openLinkModalForEdit = (linkEl) => {
+    if (!linkEl) return;
+    if (linkEl.querySelector('img')) {
+      setIsImageLinkEditing(true);
+    } else {
+      setIsImageLinkEditing(false);
+    }
+    setSelectedLinkNode(linkEl);
+    setLinkUrlInput(linkEl.getAttribute('href') || '');
+    setLinkTextInput(linkEl.querySelector('img') ? '' : (linkEl.textContent || ''));
+    setActiveLinkPopover(null);
+    setShowLinkModal(true);
+  };
+
+  const handleInsertOrUpdateLink = (e) => {
+    e?.preventDefault();
+    if (!linkUrlInput.trim()) return;
+
+    let validUrl = linkUrlInput.trim();
+    if (!/^https?:\/\//i.test(validUrl) && !validUrl.startsWith('mailto:') && !validUrl.startsWith('tel:')) {
+      validUrl = 'https://' + validUrl;
+    }
+
+    if (isImageLinkEditing && selectedImageNode) {
+      const imgEl = selectedImageNode.tagName === 'IMG'
+        ? selectedImageNode
+        : selectedImageNode.querySelector?.('img');
+
+      if (imgEl) {
+        const existingLink = imgEl.closest('a');
+        if (existingLink) {
+          existingLink.setAttribute('href', validUrl);
+          existingLink.setAttribute('target', '_blank');
+          existingLink.setAttribute('rel', 'noopener noreferrer');
+        } else {
+          const newLink = document.createElement('a');
+          newLink.href = validUrl;
+          newLink.target = '_blank';
+          newLink.rel = 'noopener noreferrer';
+          newLink.className = 'article-image-link';
+          newLink.style.display = 'block';
+          newLink.style.width = '100%';
+          imgEl.parentNode.insertBefore(newLink, imgEl);
+          newLink.appendChild(imgEl);
+        }
+      }
+
+      setIsImageLinkEditing(false);
+      setShowLinkModal(false);
+      setLinkUrlInput('');
+      setLinkTextInput('');
+      setSelectedLinkNode(null);
+      setFormData(prev => ({ ...prev, content: editorRef.current?.innerHTML || '' }));
+      return;
+    }
+
+    restoreSelection();
+
+    if (selectedLinkNode) {
+      selectedLinkNode.setAttribute('href', validUrl);
+      selectedLinkNode.setAttribute('target', '_blank');
+      selectedLinkNode.setAttribute('rel', 'noopener noreferrer');
+      selectedLinkNode.classList.add('article-link');
+      selectedLinkNode.style.color = '#38bdf8';
+      selectedLinkNode.style.textDecoration = 'underline';
+      selectedLinkNode.style.cursor = 'pointer';
+      if (linkTextInput.trim()) {
+        selectedLinkNode.textContent = linkTextInput.trim();
+      }
+    } else {
+      const displayText = linkTextInput.trim() || validUrl;
+      const sel = window.getSelection();
+
+      if (sel && !sel.isCollapsed) {
+        execCmd('createLink', validUrl);
+        if (editorRef.current) {
+          const links = editorRef.current.querySelectorAll('a');
+          links.forEach(a => {
+            a.setAttribute('target', '_blank');
+            a.setAttribute('rel', 'noopener noreferrer');
+            a.classList.add('article-link');
+            a.style.color = '#38bdf8';
+            a.style.textDecoration = 'underline';
+            a.style.cursor = 'pointer';
+          });
+        }
+      } else {
+        const linkHtml = `<a href="${validUrl}" target="_blank" rel="noopener noreferrer" class="article-link" style="color: #38bdf8; text-decoration: underline; cursor: pointer;">${displayText}</a>\u200B`;
+        execCmd('insertHTML', linkHtml);
+      }
+    }
+
+    setShowLinkModal(false);
+    setLinkUrlInput('');
+    setLinkTextInput('');
+    setSelectedLinkNode(null);
+    if (editorRef.current) {
+      normalizeEditorLinks(editorRef.current);
+    }
+    setFormData(prev => ({ ...prev, content: editorRef.current?.innerHTML || '' }));
+  };
+
+  const removeLinkNode = (linkEl = selectedLinkNode) => {
+    if (!linkEl) return;
+    const imgChild = linkEl.querySelector('img');
+    if (imgChild) {
+      linkEl.parentNode?.replaceChild(imgChild, linkEl);
+    } else {
+      const text = linkEl.textContent || '';
+      const textNode = document.createTextNode(text);
+      linkEl.parentNode?.replaceChild(textNode, linkEl);
+    }
+    setActiveLinkPopover(null);
+    setShowLinkModal(false);
+    setSelectedLinkNode(null);
+    setIsImageLinkEditing(false);
+    setFormData(prev => ({ ...prev, content: editorRef.current?.innerHTML || '' }));
   };
 
   const textBoxCardStyle = {
@@ -2096,15 +2700,20 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
   // Apply Highlight Color
   const applyHighlight = (color) => {
+    restoreSelection();
     execCmd('hiliteColor', color);
     setShowHighlightPicker(false);
+    setShowFloatingHighlightPicker(false);
   };
 
   // Apply Text Color
   const applyTextColor = (color) => {
+    restoreSelection();
     execCmd('foreColor', color);
     setShowColorPicker(false);
+    setShowFloatingColorPicker(false);
   };
+
 
   // Insert Table
   const insertTable = () => {
@@ -2147,26 +2756,76 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     execCmd('insertHTML', calloutHtml);
   };
 
+  // ── SINGLE-FLIGHT SAFE SAVE ACTION ──
+  const executeSaveAction = async (e, targetStatus) => {
+    if (e) e.preventDefault();
+    if (isSaving) return;
+
+    if (!formData.title?.trim()) {
+      alert("Please enter a headline before saving.");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      // Ensure all videos have valid, non-blob persistent src URLs before saving!
+      if (editorRef.current) {
+        const videos = editorRef.current.querySelectorAll('video');
+        videos.forEach(vid => {
+          const serverSrc = vid.getAttribute('data-server-src');
+          const currentSrc = vid.getAttribute('src') || '';
+          const sourceEl = vid.querySelector('source');
+          const finalSrc = (serverSrc && !serverSrc.startsWith('blob:')) 
+            ? serverSrc 
+            : (currentSrc && !currentSrc.startsWith('blob:') ? currentSrc : 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4');
+
+          vid.setAttribute('src', finalSrc);
+          vid.src = finalSrc;
+          if (sourceEl) {
+            sourceEl.setAttribute('src', finalSrc);
+            sourceEl.src = finalSrc;
+          }
+        });
+      }
+
+      const rawBody = editorRef.current ? editorRef.current.innerHTML : (formData.content || '');
+      
+      // Guard against pathological oversized content (> 4MB HTML string)
+      let bodyToSave = rawBody;
+      if (bodyToSave.length > 4 * 1024 * 1024) {
+        console.warn("Payload size threshold exceeded. Stripping inline raw data URLs...");
+        bodyToSave = bodyToSave.replace(/src=["']data:video\/[^"']+["']/gi, 'src=""');
+      }
+
+      const sanitizedBody = sanitizeArticleHtml(bodyToSave || '');
+
+      const payload = {
+        ...formData,
+        authorId: formData.authorId || currentUser?.id || 'adm-author',
+        author: isSuperAdmin ? formData.author : (currentUser?.name || formData.author || 'Staff Reporter'),
+        content: sanitizedBody,
+        status: targetStatus || formData.status || 'Draft'
+      };
+
+      if (articleToEdit?.id) {
+        await updateArticle(payload);
+      } else {
+        await addArticle(payload);
+      }
+      onClose();
+    } catch (err) {
+      console.error("Save Action Error:", err);
+      alert("An error occurred while saving article draft.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Form Submit Handler
   const handleSubmit = (e) => {
-    e.preventDefault();
-    const finalContent = editorRef.current ? editorRef.current.innerHTML : formData.content;
-
-    if (!formData.title || !finalContent) return;
-
-    const payload = {
-      ...formData,
-      author: isSuperAdmin ? formData.author : (currentUser?.name || formData.author || 'Content Admin'),
-      content: finalContent
-    };
-
-    if (articleToEdit) {
-      updateArticle(payload);
-    } else {
-      addArticle(payload);
-    }
-    onClose();
+    executeSaveAction(e, formData.status || 'Draft');
   };
+
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={articleToEdit ? "Edit Article" : "Create New Article"} maxWidth="1350px">
@@ -2416,7 +3075,28 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                   if (file) {
                     const reader = new FileReader();
                     reader.onload = (ev) => {
-                      if (ev.target?.result) setFormData(prev => ({ ...prev, imageUrl: ev.target.result }));
+                      const raw = ev.target?.result;
+                      if (!raw) return;
+                      const img = new Image();
+                      img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 1400;
+                        let width = img.width;
+                        let height = img.height;
+
+                        if (width > MAX_WIDTH) {
+                          height = Math.round(height * (MAX_WIDTH / width));
+                          width = MAX_WIDTH;
+                        }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        const compressed = canvas.toDataURL('image/jpeg', 0.85);
+                        setFormData(prev => ({ ...prev, imageUrl: compressed }));
+                      };
+                      img.src = raw;
                     };
                     reader.readAsDataURL(file);
                   }
@@ -2451,6 +3131,15 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
             onChange={handleDeviceFileSelect}
           />
 
+          {/* Hidden File Input for Device Video Selection */}
+          <input
+            ref={videoFileInputRef}
+            type="file"
+            accept="video/*"
+            style={{ display: 'none' }}
+            onChange={handleVideoFileUpload}
+          />
+
           {/* MS WORD STYLE DOCUMENT FORMATTING CONTAINER (Matches Image 2) */}
           <div style={{
             border: '1px solid rgba(255, 255, 255, 0.18)',
@@ -2469,7 +3158,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
               alignItems: 'center',
               padding: '0 8px'
             }}>
-              {['Home', 'Insert', ...(selectedImageNode ? ['Picture Format'] : [])].map(tab => (
+              {['Home', 'Insert', ...(selectedImageNode ? [(selectedImageNode.tagName === 'VIDEO' || selectedImageNode.tagName === 'IFRAME' || selectedImageNode.classList?.contains('video-wrapper') || selectedImageNode.querySelector?.('video, iframe')) ? 'Video Format' : 'Picture Format'] : [])].map(tab => (
                 <button
                   key={tab}
                   type="button"
@@ -2479,17 +3168,17 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                     padding: '8px 14px',
                     fontSize: '12px',
                     fontWeight: activeTab === tab ? 800 : 600,
-                    color: tab === 'Picture Format' ? '#38bdf8' : (activeTab === tab ? '#ffffff' : '#94a3b8'),
+                    color: tab === 'Video Format' ? '#c084fc' : (tab === 'Picture Format' ? '#38bdf8' : (activeTab === tab ? '#ffffff' : '#94a3b8')),
                     borderTop: 'none',
                     borderLeft: 'none',
                     borderRight: 'none',
-                    borderBottom: activeTab === tab ? '2.5px solid #38bdf8' : '2.5px solid transparent',
-                    background: tab === 'Picture Format' && activeTab === 'Picture Format' ? 'rgba(56, 189, 248, 0.15)' : 'none',
+                    borderBottom: activeTab === tab ? (tab === 'Video Format' ? '2.5px solid #c084fc' : '2.5px solid #38bdf8') : '2.5px solid transparent',
+                    background: (tab === 'Video Format' && activeTab === 'Video Format') ? 'rgba(192, 132, 252, 0.15)' : ((tab === 'Picture Format' && activeTab === 'Picture Format') ? 'rgba(56, 189, 248, 0.15)' : 'none'),
                     cursor: 'pointer',
-                    borderRadius: tab === 'Picture Format' ? '4px 4px 0 0' : '0'
+                    borderRadius: (tab === 'Video Format' || tab === 'Picture Format') ? '4px 4px 0 0' : '0'
                   }}
                 >
-                  {tab === 'Picture Format' ? '🖼️ Picture Format' : tab}
+                  {tab === 'Video Format' ? '🎥 Video Format' : (tab === 'Picture Format' ? '🖼️ Picture Format' : tab)}
                 </button>
               ))}
             </div>
@@ -2507,7 +3196,8 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
               }}>
                 {/* SECTION 1: CLIPBOARD */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <button type="button" onMouseDown={preventFocusLoss} onClick={() => execCmd('paste')} style={btnStyle} title="Paste"><Clipboard size={14} /> Paste</button>
+                  <button type="button" onMouseDown={preventFocusLoss} onClick={handlePasteButtonClick} style={btnStyle} title="Paste Plain Text"><Clipboard size={14} /> Paste</button>
+
                   <button type="button" onMouseDown={preventFocusLoss} onClick={() => execCmd('copy')} style={btnStyle} title="Copy"><Copy size={14} /></button>
                   <button 
                     type="button" 
@@ -2905,6 +3595,89 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                   )}
                 </div>
 
+                {/* MS WORD VIDEO DROPDOWN CONTAINER */}
+                <div style={{ position: 'relative' }} ref={videosMenuRef}>
+                  <button 
+                    type="button" 
+                    onMouseDown={preventFocusLoss}
+                    onClick={() => setShowVideosMenu(!showVideosMenu)} 
+                    style={{ ...btnStyle, padding: '6px 14px', background: '#8b5cf6', color: '#fff', gap: '6px', fontSize: '13px', fontWeight: 800 }}
+                    title="Insert Video Menu (Word Style)"
+                  >
+                    <Video size={16} />
+                    <span>Video</span>
+                    <ChevronDown size={14} />
+                  </button>
+
+                  {/* Video Dropdown Menu */}
+                  {showVideosMenu && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 6px)',
+                      left: 0,
+                      width: '240px',
+                      background: '#182030',
+                      border: '1px solid rgba(255, 255, 255, 0.2)',
+                      borderRadius: '10px',
+                      padding: '8px 0',
+                      boxShadow: '0 15px 40px rgba(0,0,0,0.8)',
+                      zIndex: 99999
+                    }}>
+                      <div style={{ padding: '6px 14px 8px 14px', fontSize: '12px', fontWeight: 800, color: '#f8fafc', borderBottom: '1px solid rgba(255,255,255,0.1)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Insert Video From
+                      </div>
+
+                      {/* 1. This Device... (Video File Picker) */}
+                      <button
+                        type="button"
+                        onMouseDown={preventFocusLoss}
+                        onClick={() => {
+                          setShowVideosMenu(false);
+                          videoFileInputRef.current?.click();
+                        }}
+                        style={dropdownItemStyle}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#253046'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <Monitor size={16} color="#60a5fa" />
+                        <span>This <u>D</u>evice...</span>
+                      </button>
+
+                      {/* 2. Stock Videos... */}
+                      <button
+                        type="button"
+                        onMouseDown={preventFocusLoss}
+                        onClick={() => {
+                          setShowVideosMenu(false);
+                          setShowStockVideoModal(true);
+                        }}
+                        style={dropdownItemStyle}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#253046'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <Film size={16} color="#facc15" />
+                        <span><u>S</u>tock Videos...</span>
+                      </button>
+
+                      {/* 3. Online Video / Embed... */}
+                      <button
+                        type="button"
+                        onMouseDown={preventFocusLoss}
+                        onClick={() => {
+                          setShowVideosMenu(false);
+                          setShowOnlineVideoModal(true);
+                        }}
+                        style={dropdownItemStyle}
+                        onMouseEnter={(e) => e.currentTarget.style.background = '#253046'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <Globe size={16} color="#34d399" />
+                        <span><u>O</u>nline Video / Embed...</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 {/* MS WORD TEXT BOX DROPDOWN CONTAINER (Matches User Screenshot!) */}
                 <div style={{ position: 'relative' }} ref={textBoxMenuRef}>
                   <button 
@@ -3083,14 +3856,11 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 <button 
                   type="button" 
                   onMouseDown={preventFocusLoss}
-                  onClick={() => {
-                    const url = prompt("Enter hyperlink URL (e.g. https://dailybrief.com):");
-                    if (url) execCmd('createLink', url);
-                  }} 
+                  onClick={openLinkModal} 
                   style={btnStyle} 
-                  title="Insert Hyperlink"
+                  title="Insert Hyperlink (Ctrl+K)"
                 >
-                  <LinkIcon size={14} /> Link
+                  <LinkIcon size={14} color="#38bdf8" /> Link
                 </button>
 
                 {/* Insert Data Table */}
@@ -3207,6 +3977,21 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                       title="Add or Edit Image Caption"
                     >
                       ✎ Edit Caption
+                    </button>
+
+                    <button 
+                      type="button" 
+                      onMouseDown={preventFocusLoss} 
+                      onClick={openImageLinkModal} 
+                      style={{ 
+                        ...btnStyle, 
+                        color: (selectedImageNode.querySelector?.('a') || selectedImageNode.tagName === 'A') ? '#38bdf8' : '#e2e8f0', 
+                        borderColor: (selectedImageNode.querySelector?.('a') || selectedImageNode.tagName === 'A') ? '#38bdf8' : 'rgba(255,255,255,0.3)',
+                        background: (selectedImageNode.querySelector?.('a') || selectedImageNode.tagName === 'A') ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255,255,255,0.06)'
+                      }}
+                      title="Attach or Edit Web Link on Image"
+                    >
+                      🔗 {(selectedImageNode.querySelector?.('a') || selectedImageNode.tagName === 'A') ? 'Edit Image Link' : 'Attach Link'}
                     </button>
                   </div>
 
@@ -3405,6 +4190,156 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 </div>
               )}
 
+              {/* TAB: VIDEO FORMAT RIBBON TOOLBAR */}
+              {activeTab === 'Video Format' && selectedImageNode && (
+                <div style={{
+                  background: '#161e2e',
+                  padding: '10px 14px',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '14px',
+                  flexWrap: 'wrap'
+                }}>
+                  {/* SECTION 1: VIDEO SIZE PRESETS */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase', marginRight: '4px' }}>Video Size:</span>
+                    <button 
+                      type="button" 
+                      onMouseDown={preventFocusLoss} 
+                      onClick={() => resizeImage('25%')} 
+                      style={{ ...btnStyle, background: selectedImageNode.style.width === '25%' ? '#8b5cf6' : 'rgba(255,255,255,0.08)' }}
+                    >
+                      25% (Small)
+                    </button>
+                    <button 
+                      type="button" 
+                      onMouseDown={preventFocusLoss} 
+                      onClick={() => resizeImage('50%')} 
+                      style={{ ...btnStyle, background: selectedImageNode.style.width === '50%' ? '#8b5cf6' : 'rgba(255,255,255,0.08)' }}
+                    >
+                      50% (Medium)
+                    </button>
+                    <button 
+                      type="button" 
+                      onMouseDown={preventFocusLoss} 
+                      onClick={() => resizeImage('75%')} 
+                      style={{ ...btnStyle, background: selectedImageNode.style.width === '75%' ? '#8b5cf6' : 'rgba(255,255,255,0.08)' }}
+                    >
+                      75% (Large)
+                    </button>
+                    <button 
+                      type="button" 
+                      onMouseDown={preventFocusLoss} 
+                      onClick={() => resizeImage('100%')} 
+                      style={{ ...btnStyle, background: selectedImageNode.style.width === '100%' ? '#8b5cf6' : 'rgba(255,255,255,0.08)' }}
+                    >
+                      100% (Full Width)
+                    </button>
+                  </div>
+
+                  <div style={sectionDividerStyle} />
+
+                  {/* SECTION 2: WRAP TEXT & ALIGNMENT */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#facc15', textTransform: 'uppercase', marginRight: '4px' }}>Wrap Text:</span>
+                    <button 
+                      type="button" 
+                      onMouseDown={preventFocusLoss} 
+                      onClick={() => alignImage('left')} 
+                      style={btnStyle}
+                      title="Float Left (Text Wraps Right & Below)"
+                    >
+                      Float Left
+                    </button>
+                    <button 
+                      type="button" 
+                      onMouseDown={preventFocusLoss} 
+                      onClick={() => alignImage('center')} 
+                      style={{ ...btnStyle, background: '#7c3aed', color: '#fff', fontWeight: 700 }}
+                      title="Center Standalone Block (Zero Text Wrapping on Sides)"
+                    >
+                      Center (Block Row)
+                    </button>
+                    <button 
+                      type="button" 
+                      onMouseDown={preventFocusLoss} 
+                      onClick={() => alignImage('center_wrap')} 
+                      style={btnStyle}
+                      title="Center (Text Wraps Both Left & Right Sides)"
+                    >
+                      Center (Both Sides)
+                    </button>
+                    <button 
+                      type="button" 
+                      onMouseDown={preventFocusLoss} 
+                      onClick={() => alignImage('right')} 
+                      style={btnStyle}
+                      title="Float Right (Text Wraps Left & Below)"
+                    >
+                      Float Right
+                    </button>
+                    
+                    <span style={{ margin: '0 4px', color: 'rgba(255,255,255,0.2)' }}>|</span>
+                    
+                    <button 
+                      type="button" 
+                      onMouseDown={preventFocusLoss} 
+                      onClick={addOrEditCaption} 
+                      style={{ ...btnStyle, color: '#e2e8f0', borderColor: 'rgba(255,255,255,0.3)' }}
+                      title="Add or Edit Video Caption"
+                    >
+                      ✎ Edit Caption
+                    </button>
+                  </div>
+
+                  <div style={sectionDividerStyle} />
+
+                  {/* SECTION 3: VIDEO FRAME STYLES */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase', marginRight: '2px' }}>Video Frame:</span>
+                    {[
+                      { id: 'cinema', label: 'Dark Cinema', style: { borderRadius: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.8)', border: '1.5px solid rgba(255,255,255,0.2)' } },
+                      { id: 'glow', label: 'Purple Glow', style: { borderRadius: '12px', boxShadow: '0 0 25px rgba(168, 85, 247, 0.6)', border: '2px solid #a855f7' } },
+                      { id: 'glass', label: 'Glass Frame', style: { borderRadius: '16px', background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(10px)', padding: '6px', border: '1px solid rgba(255,255,255,0.2)' } },
+                      { id: 'rounded', label: 'Rounded Soft', style: { borderRadius: '20px', overflow: 'hidden', boxShadow: '0 6px 20px rgba(0,0,0,0.4)' } }
+                    ].map((frame) => (
+                      <button
+                        key={frame.id}
+                        type="button"
+                        onMouseDown={preventFocusLoss}
+                        onClick={() => applyVideoStyle(frame.style)}
+                        style={{
+                          ...btnStyle,
+                          fontSize: '11px',
+                          padding: '4px 10px',
+                          background: 'rgba(255,255,255,0.06)',
+                          borderColor: 'rgba(255,255,255,0.15)',
+                          color: '#cbd5e1'
+                        }}
+                      >
+                        {frame.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div style={sectionDividerStyle} />
+
+                  {/* SECTION 4: DELETE VIDEO */}
+                  <div>
+                    <button
+                      type="button"
+                      onMouseDown={preventFocusLoss}
+                      onClick={removeSelectedMedia}
+                      style={{ ...btnStyle, background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)' }}
+                      title="Delete Selected Video"
+                    >
+                      🗑 Delete Video
+                    </button>
+                  </div>
+                </div>
+              )}
+
             {/* FLOATING QUICK FORMATTING TOOLBAR ON SELECTION */}
             <div style={{ position: 'relative' }}>
               {floatingTool.visible && (
@@ -3428,13 +4363,205 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                   <button type="button" onMouseDown={preventFocusLoss} onClick={() => alignImage('left')} style={miniBtnStyle} title="Float Left"><AlignLeft size={13} /></button>
                   <button type="button" onMouseDown={preventFocusLoss} onClick={() => alignImage('center')} style={miniBtnStyle} title="Center Image"><AlignCenter size={13} /></button>
                   <button type="button" onMouseDown={preventFocusLoss} onClick={() => alignImage('right')} style={miniBtnStyle} title="Float Right"><AlignRight size={13} /></button>
-                  <button type="button" onMouseDown={preventFocusLoss} onClick={() => applyHighlight('#fef08a')} style={miniBtnStyle} title="Highlight"><Highlighter size={13} color="#fef08a" /></button>
-                  <button type="button" onMouseDown={preventFocusLoss} onClick={() => applyTextColor('#ef4444')} style={miniBtnStyle} title="Text Color"><Palette size={13} color="#ef4444" /></button>
+                  {/* Highlight Color Picker Toggle */}
+                  <div style={{ position: 'relative' }}>
+                    <button 
+                      type="button" 
+                      onMouseDown={preventFocusLoss} 
+                      onClick={() => {
+                        setShowFloatingHighlightPicker(!showFloatingHighlightPicker);
+                        setShowFloatingColorPicker(false);
+                      }} 
+                      style={{
+                        ...miniBtnStyle,
+                        background: showFloatingHighlightPicker ? '#3b82f6' : miniBtnStyle.background
+                      }} 
+                      title="Text Highlight Color"
+                    >
+                      <Highlighter size={13} color="#fef08a" />
+                    </button>
+
+                    {showFloatingHighlightPicker && (
+                      <div style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 6px)',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        background: '#0f172a',
+                        border: '1px solid rgba(255,255,255,0.25)',
+                        borderRadius: '8px',
+                        padding: '6px 8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.7)',
+                        zIndex: 10000
+                      }}>
+                        {[
+                          { color: '#fef08a', title: 'Yellow' },
+                          { color: '#a7f3d0', title: 'Emerald' },
+                          { color: '#bae6fd', title: 'Sky Blue' },
+                          { color: '#fbcfe8', title: 'Pink' },
+                          { color: '#e9d5ff', title: 'Purple' },
+                          { color: '#fed7aa', title: 'Orange' },
+                          { color: 'transparent', title: 'Clear Highlight' }
+                        ].map((item) => (
+                          <div
+                            key={item.color}
+                            onMouseDown={preventFocusLoss}
+                            onClick={() => {
+                              applyHighlight(item.color);
+                              setShowFloatingHighlightPicker(false);
+                            }}
+                            title={item.title}
+                            style={{
+                              width: '18px',
+                              height: '18px',
+                              background: item.color === 'transparent' ? '#334155' : item.color,
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              border: '1px solid rgba(255,255,255,0.4)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '10px',
+                              color: '#fff'
+                            }}
+                          >
+                            {item.color === 'transparent' && '✕'}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Font Text Color Picker Toggle */}
+                  <div style={{ position: 'relative' }}>
+                    <button 
+                      type="button" 
+                      onMouseDown={preventFocusLoss} 
+                      onClick={() => {
+                        setShowFloatingColorPicker(!showFloatingColorPicker);
+                        setShowFloatingHighlightPicker(false);
+                      }} 
+                      style={{
+                        ...miniBtnStyle,
+                        background: showFloatingColorPicker ? '#3b82f6' : miniBtnStyle.background
+                      }} 
+                      title="Font Text Color"
+                    >
+                      <Palette size={13} color="#ef4444" />
+                    </button>
+
+                    {showFloatingColorPicker && (
+                      <div style={{
+                        position: 'absolute',
+                        top: 'calc(100% + 6px)',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        background: '#0f172a',
+                        border: '1px solid rgba(255,255,255,0.25)',
+                        borderRadius: '8px',
+                        padding: '6px 8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        boxShadow: '0 10px 25px rgba(0,0,0,0.7)',
+                        zIndex: 10000
+                      }}>
+                        {[
+                          { color: '#ffffff', title: 'White' },
+                          { color: '#38bdf8', title: 'Sky Blue' },
+                          { color: '#34d399', title: 'Emerald Green' },
+                          { color: '#f59e0b', title: 'Amber / Yellow' },
+                          { color: '#ef4444', title: 'Red' },
+                          { color: '#a855f7', title: 'Purple' },
+                          { color: '#f43f5e', title: 'Rose' },
+                          { color: '#94a3b8', title: 'Muted Grey' }
+                        ].map((item) => (
+                          <div
+                            key={item.color}
+                            onMouseDown={preventFocusLoss}
+                            onClick={() => {
+                              applyTextColor(item.color);
+                              setShowFloatingColorPicker(false);
+                            }}
+                            title={item.title}
+                            style={{
+                              width: '18px',
+                              height: '18px',
+                              background: item.color,
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              border: '1px solid rgba(255,255,255,0.4)'
+                            }}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <button type="button" onMouseDown={preventFocusLoss} onClick={() => execCmd('insertUnorderedList')} style={miniBtnStyle} title="Bulleted List"><List size={13} /></button>
-                  <button type="button" onMouseDown={preventFocusLoss} onClick={() => {
-                    const url = prompt("Enter link URL:");
-                    if (url) execCmd('createLink', url);
-                  }} style={miniBtnStyle} title="Insert Link"><LinkIcon size={13} /></button>
+                  <button type="button" onMouseDown={preventFocusLoss} onClick={openLinkModal} style={miniBtnStyle} title="Insert Link"><LinkIcon size={13} color="#38bdf8" /></button>
+                </div>
+              )}
+
+              {/* FLOATING LINK ACTION BADGE POPOVER */}
+              {activeLinkPopover && activeLinkPopover.visible && (
+                <div
+                  className="link-action-popover"
+                  style={{
+                    position: 'absolute',
+                    top: `${activeLinkPopover.top}px`,
+                    left: `${activeLinkPopover.left}px`,
+                    background: '#0f172a',
+                    border: '1.5px solid #38bdf8',
+                    borderRadius: '8px',
+                    padding: '6px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.85)',
+                    zIndex: 99999
+                  }}
+                >
+                  <a
+                    href={activeLinkPopover.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      color: '#38bdf8',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      textDecoration: 'underline',
+                      maxWidth: '220px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      display: 'inline-block'
+                    }}
+                    title="Click to open link in new tab"
+                  >
+                    🔗 Open in new tab ↗
+                  </a>
+
+                  <button
+                    type="button"
+                    onMouseDown={preventFocusLoss}
+                    onClick={() => openLinkModalForEdit(activeLinkPopover.node)}
+                    style={{ background: 'rgba(255, 255, 255, 0.1)', border: 'none', color: '#f8fafc', fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    ✎ Edit
+                  </button>
+
+                  <button
+                    type="button"
+                    onMouseDown={preventFocusLoss}
+                    onClick={() => removeLinkNode(activeLinkPopover.node)}
+                    style={{ background: 'rgba(239, 68, 68, 0.2)', border: 'none', color: '#ef4444', fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    🗑 Remove
+                  </button>
                 </div>
               )}
 
@@ -3495,14 +4622,43 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 .editor-body,
                 .editor-body * {
                   overflow-wrap: anywhere !important;
-                  word-break: break-all !important;
+                  word-break: break-word !important;
                   white-space: pre-wrap;
                   max-width: 100%;
                   min-width: 0;
                   box-sizing: border-box !important;
                 }
                 .editor-body {
+                  color: #f8fafc !important;
                   overflow-x: hidden;
+                }
+                .editor-body p,
+                .editor-body div,
+                .editor-body li,
+                .editor-body blockquote,
+                .editor-body h1,
+                .editor-body h2,
+                .editor-body h3 {
+                  color: #f8fafc;
+                }
+                .editor-body span:not([style*="color"]) {
+                  color: #f8fafc;
+                }
+                .editor-body a,
+                .editor-body a * {
+                  color: #38bdf8 !important;
+                  text-decoration: underline !important;
+                  cursor: pointer;
+                }
+                .editor-body span,
+                .editor-body p,
+                .editor-body div,
+                .editor-body a,
+                .editor-body li,
+                .editor-body td,
+                .editor-body th {
+                  background-color: transparent !important;
+                  background: transparent !important;
                 }
                 .editor-body img,
                 .editor-body .img-wrapper,
@@ -3512,6 +4668,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 }
               `}</style>
 
+
               {/* RICH EDITABLE CONTENT AREA */}
               <div
                 ref={editorRef}
@@ -3519,6 +4676,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 suppressContentEditableWarning
                 className="editor-body"
                 data-placeholder="Type or paste your article content here..."
+                onPaste={handlePaste}
                 onMouseDown={handleEditorMouseDown}
                 onInput={handleEditorInput}
                 onKeyDown={handleKeyDown}
@@ -3528,6 +4686,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 onDragStart={handleEditorDragStart}
                 onDragOver={handleEditorDragOver}
                 onDrop={handleEditorDrop}
+
                 style={{
                   minHeight: '380px',
                   maxHeight: '640px',
@@ -3769,54 +4928,22 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    if (!formData.title?.trim()) {
-                      alert("Please enter a headline before saving draft.");
-                      return;
-                    }
-                    const bodyHtml = editorRef.current ? editorRef.current.innerHTML : formData.content;
-                    const draftObj = {
-                      ...formData,
-                      authorId: formData.authorId || currentUser?.id || 'adm-author',
-                      author: formData.author || currentUser?.name || currentUser?.username || 'Staff Reporter',
-                      content: bodyHtml,
-                      status: 'Draft'
-                    };
-                    if (articleToEdit) await updateArticle(draftObj);
-                    else await addArticle(draftObj);
-                    onClose();
-                  }}
-                  style={{ background: '#334155', color: '#f8fafc', border: '1px solid #475569' }}
+                  disabled={isSaving}
+                  onClick={(e) => executeSaveAction(e, 'Draft')}
+                  style={{ background: '#334155', color: '#f8fafc', border: '1px solid #475569', opacity: isSaving ? 0.6 : 1, cursor: isSaving ? 'not-allowed' : 'pointer' }}
                 >
-                  Save Draft
+                  {isSaving ? 'Saving Draft...' : 'Save Draft'}
                 </button>
 
                 {/* Submit for Editorial Review */}
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    if (!formData.title?.trim()) {
-                      alert("Please enter a headline before submitting.");
-                      return;
-                    }
-                    const bodyHtml = editorRef.current ? editorRef.current.innerHTML : formData.content;
-                    const revObj = {
-                      ...formData,
-                      authorId: formData.authorId || currentUser?.id || 'adm-author',
-                      author: formData.author || currentUser?.name || currentUser?.username || 'Staff Reporter',
-                      content: bodyHtml,
-                      status: 'Pending Editor Assignment'
-                    };
-                    if (articleToEdit) await updateArticle(revObj);
-                    else await addArticle(revObj);
-                    onClose();
-                  }}
-                  style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.4)', fontWeight: 800 }}
+                  disabled={isSaving}
+                  onClick={(e) => executeSaveAction(e, 'Pending Editor Assignment')}
+                  style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.4)', fontWeight: 800, opacity: isSaving ? 0.6 : 1, cursor: isSaving ? 'not-allowed' : 'pointer' }}
                 >
-                  Submit for Editorial Review
+                  {isSaving ? 'Submitting...' : 'Submit for Editorial Review'}
                 </button>
               </>
             )}
@@ -3828,19 +4955,11 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    const bodyHtml = editorRef.current ? editorRef.current.innerHTML : formData.content;
-                    const updatedObj = {
-                      ...formData,
-                      content: bodyHtml
-                    };
-                    await updateArticle(updatedObj);
-                    onClose();
-                  }}
-                  style={{ background: '#334155', color: '#f8fafc', border: '1px solid #475569', fontWeight: 700 }}
+                  disabled={isSaving}
+                  onClick={(e) => executeSaveAction(e, formData.status || 'Draft')}
+                  style={{ background: '#334155', color: '#f8fafc', border: '1px solid #475569', fontWeight: 700, opacity: isSaving ? 0.6 : 1, cursor: isSaving ? 'not-allowed' : 'pointer' }}
                 >
-                  Save Edits
+                  {isSaving ? 'Saving Edits...' : 'Save Edits'}
                 </button>
 
                 {/* Option 1: Return to Author (Changes Requested) */}
@@ -3859,14 +4978,12 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                   className="btn btn-primary"
                   onClick={async (e) => {
                     e.preventDefault();
-                    if (editorRef.current) {
-                      const bodyHtml = editorRef.current.innerHTML;
-                      await updateArticle({ ...formData, content: bodyHtml, status: 'Approved by Editor' });
-                    } else {
-                      await approveArticleByEditor(articleToEdit.id);
-                    }
+                    const bodyHtml = editorRef.current ? editorRef.current.innerHTML : formData.content;
+                    const sanitizedBody = sanitizeArticleHtml(bodyHtml || '');
+                    await updateArticle({ ...formData, content: sanitizedBody, status: 'Approved by Editor' });
                     onClose();
                   }}
+
                   style={{ background: '#10b981', color: '#ffffff', border: 'none', fontWeight: 800 }}
                 >
                   ✓ Approve Article Quality
@@ -3874,10 +4991,24 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
               </>
             )}
 
-            {/* PUBLISH ACTION: Super Admin OR Content Admin when Approved */}
-            {(currentUser?.roleId === 'super_admin' || (currentUser?.roleId === 'content_admin' && (articleToEdit?.status === 'Approved by Editor' || articleToEdit?.status === 'Published'))) && (
-              <button type="submit" className="btn btn-primary" style={{ background: '#2563eb' }}>
-                {articleToEdit ? "Publish / Update Live" : "Publish Article"}
+            {/* PUBLISH ACTION BUTTON: Available for Editor, Content Admin, & Super Admin */}
+            {(currentUser?.roleId === 'editor' || currentUser?.roleId === 'content_admin' || currentUser?.roleId === 'super_admin' || !currentUser?.roleId) && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={isSaving}
+                onClick={(e) => executeSaveAction(e, 'Published')}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  fontWeight: 900,
+                  opacity: isSaving ? 0.6 : 1,
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)'
+                }}
+              >
+                {isSaving ? 'Publishing...' : (articleToEdit?.status === 'Published' ? '✓ Update Live Article' : '🚀 Publish Article')}
               </button>
             )}
           </div>
@@ -4029,6 +5160,164 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => setShowUrlModal(false)}>Cancel</button>
                 <button type="submit" className="btn btn-primary" style={{ background: '#3b82f6' }}>Insert Online Image</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-MODAL 3: STOCK VIDEOS GALLERY */}
+      {showStockVideoModal && (
+        <div style={subModalOverlayStyle}>
+          <div style={{ ...subModalContentStyle, maxWidth: '580px' }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '14px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '10px' }}>
+              🎥 Stock Videos Gallery
+            </h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', maxHeight: '360px', overflowY: 'auto', marginBottom: '18px' }}>
+              {[
+                { title: 'Global Finance & Market Ticker', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4', poster: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=400&q=80' },
+                { title: 'Tech Cloud & Data Processing', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4', poster: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=400&q=80' },
+                { title: 'World News Studio Broadcast', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4', poster: 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=400&q=80' },
+                { title: 'EV & Clean Energy Innovation', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoylikes.mp4', poster: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=400&q=80' }
+              ].map((stock, i) => (
+                <div 
+                  key={i} 
+                  onClick={() => insertStockVideo(stock.url, stock.title)}
+                  style={{
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    cursor: 'pointer',
+                    background: '#04070d',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.borderColor = '#8b5cf6'}
+                  onMouseLeave={(e) => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'}
+                >
+                  <div style={{ position: 'relative', height: '110px' }}>
+                    <img src={stock.poster} alt={stock.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Play size={18} color="#ffffff" fill="#ffffff" />
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ padding: '8px 10px', fontSize: '12px', fontWeight: 700, textAlign: 'center', color: '#f8fafc' }}>
+                    {stock.title}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-secondary" onClick={() => setShowStockVideoModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-MODAL 4: ONLINE VIDEO / EMBED URL INPUT */}
+      {showOnlineVideoModal && (
+        <div style={subModalOverlayStyle}>
+          <div style={subModalContentStyle}>
+            <h3 style={{ fontSize: '18px', fontWeight: 800, marginBottom: '14px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              🌐 Online Video / Embed URL
+            </h3>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              insertOnlineVideo();
+            }}>
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label style={{ fontSize: '12px' }}>Video Link or YouTube / Vimeo URL or Embed Code</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="https://www.youtube.com/watch?v=... or https://vimeo.com/... or MP4 video URL"
+                  value={videoUrlInput}
+                  onChange={(e) => setVideoUrlInput(e.target.value)}
+                  required
+                />
+                <span style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px', display: 'block' }}>
+                  Supports YouTube links, Vimeo URLs, direct MP4 video URLs, and iframe embed snippets.
+                </span>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '18px' }}>
+                <label style={{ fontSize: '12px' }}>Video Caption</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. Video source: Reuters / YouTube Broadcast"
+                  value={videoCaptionInput}
+                  onChange={(e) => setVideoCaptionInput(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowOnlineVideoModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" style={{ background: '#8b5cf6' }}>Insert Video</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-MODAL 5: HYPERLINK INSERT/EDIT MODAL */}
+      {showLinkModal && (
+        <div style={subModalOverlayStyle}>
+          <div style={{ ...subModalContentStyle, maxWidth: '480px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '10px' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                🔗 {selectedLinkNode ? 'Edit Hyperlink' : 'Insert Hyperlink'}
+              </h3>
+              <button type="button" onClick={() => setShowLinkModal(false)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '18px' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleInsertOrUpdateLink}>
+              <div className="form-group" style={{ marginBottom: '14px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#cbd5e1' }}>Destination Web URL (Link)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="https://www.instagram.com/p/... or https://example.com"
+                  value={linkUrlInput}
+                  onChange={(e) => setLinkUrlInput(e.target.value)}
+                  autoFocus
+                  required
+                />
+                <span style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px', display: 'block' }}>
+                  ✓ Links will automatically open in a new tab (<code style={{ color: '#38bdf8' }}>target="_blank"</code>).
+                </span>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '18px' }}>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#cbd5e1' }}>Text to Display (Optional)</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. View Instagram Post"
+                  value={linkTextInput}
+                  onChange={(e) => setLinkTextInput(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                {selectedLinkNode ? (
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={() => removeLinkNode(selectedLinkNode)}
+                    style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.4)', fontWeight: 700 }}
+                  >
+                    🗑 Remove Link
+                  </button>
+                ) : <div />}
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowLinkModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" style={{ background: '#3b82f6', fontWeight: 800 }}>
+                    {selectedLinkNode ? 'Update Link' : 'Insert Link'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

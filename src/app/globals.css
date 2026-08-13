@@ -492,3 +492,165 @@ textarea.form-control {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.25) rgba(15, 23, 42, 0.6);
 }
+
+/* Centered Media Block Row Fix for Pictures and Videos */
+.image-center,
+figure.image-center,
+.editor-body figure.image-center,
+.article-body figure.image-center,
+.editor-body figure.video-wrapper.image-center,
+.article-body figure.video-wrapper.image-center {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  clear: both !important;
+  float: none !important;
+  margin: 1rem 0 !important;
+  text-align: center !important;
+}
+
+.image-center img,
+figure.image-center img,
+.editor-body figure.image-center img,
+.article-body figure.image-center img,
+.image-center video,
+.image-center iframe,
+figure.image-center video,
+figure.image-center iframe,
+.editor-body figure.image-center video,
+.editor-body figure.image-center iframe,
+.article-body figure.image-center video,
+.article-body figure.image-center iframe {
+  display: block !important;
+  margin: 0 auto !important;
+  max-width: 100% !important;
+  height: auto !important;
+  float: none !important;
+}
+
+/* Floated Media Rules for Pictures and Videos (Float Left / Float Right) */
+.editor-body figure:not(.image-center)[style*="float: left"],
+.article-body figure:not(.image-center)[style*="float: left"],
+.preview-article-body figure:not(.image-center)[style*="float: left"],
+.editor-body figure:not(.image-center)[style*="float:left"],
+.article-body figure:not(.image-center)[style*="float:left"],
+.preview-article-body figure:not(.image-center)[style*="float:left"],
+figure.img-wrapper[style*="float: left"],
+figure.img-wrapper[style*="float:left"],
+figure.video-wrapper[style*="float: left"],
+figure.video-wrapper[style*="float:left"] {
+  float: left !important;
+  clear: none !important;
+  margin: 12px 24px 12px 0 !important;
+  display: block !important;
+  max-width: 50% !important;
+}
+
+.editor-body figure:not(.image-center)[style*="float: right"],
+.article-body figure:not(.image-center)[style*="float: right"],
+.preview-article-body figure:not(.image-center)[style*="float: right"],
+.editor-body figure:not(.image-center)[style*="float:right"],
+.article-body figure:not(.image-center)[style*="float:right"],
+.preview-article-body figure:not(.image-center)[style*="float:right"],
+figure.img-wrapper[style*="float: right"],
+figure.img-wrapper[style*="float:right"],
+figure.video-wrapper[style*="float: right"],
+figure.video-wrapper[style*="float:right"] {
+  float: right !important;
+  clear: none !important;
+  margin: 12px 0 12px 24px !important;
+  display: block !important;
+  max-width: 50% !important;
+}
+
+/* Centered Media Rules */
+.editor-body figure.image-center,
+.article-body figure.image-center,
+.preview-article-body figure.image-center,
+figure.img-wrapper.image-center,
+figure.video-wrapper.image-center {
+  float: none !important;
+  clear: both !important;
+  display: block !important;
+  margin: 16px auto !important;
+  text-align: center !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.editor-body p,
+.article-body p {
+  display: block;
+  width: 100%;
+}
+
+.editor-body span,
+.article-body span {
+  display: inline;
+}
+
+/* Hyperlink Styling for Editor & Articles */
+.editor-body a,
+.article-body a,
+a.article-link {
+  color: #38bdf8 !important;
+  text-decoration: underline !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: color 0.15s ease;
+  display: inline !important;
+}
+
+.editor-body a:hover,
+.article-body a:hover,
+a.article-link:hover {
+  color: #60a5fa !important;
+  text-decoration: underline !important;
+}
+
+/* Media Wrappers & Embedded Video/Audio Rules */
+.editor-body figure.video-wrapper,
+.article-body figure.video-wrapper,
+.preview-article-body figure.video-wrapper,
+.editor-body figure.img-wrapper,
+.article-body figure.img-wrapper,
+.preview-article-body figure.img-wrapper {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.editor-body figure.video-wrapper video,
+.article-body figure.video-wrapper video,
+.preview-article-body figure.video-wrapper video,
+.editor-body video,
+.article-body video,
+.preview-article-body video {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+}
+
+.editor-body figure.video-wrapper iframe,
+.article-body figure.video-wrapper iframe,
+.preview-article-body figure.video-wrapper iframe,
+.editor-body iframe,
+.article-body iframe,
+.preview-article-body iframe {
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  border: none;
+}
+
+/* Clearfix for Article Containers */
+.article-body::after,
+.preview-article-body::after,
+.editor-body::after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+

@@ -484,30 +484,37 @@ export default function ArticlesPage() {
                             <Edit2 size={14} />
                           </button>
 
-                          {/* Publish Action: Super Admin or Author when Approved */}
-                          {!isEditor && (
-                            art.status !== 'Published' ? (
-                              <button
-                                className="btn btn-sm btn-secondary"
-                                title="Publish Article Live"
-                                onClick={() => toggleArticleStatus(art.id, 'Published')}
-                                disabled={isContentAdmin && art.status !== 'Approved by Editor'}
-                                style={{
-                                  opacity: (isContentAdmin && art.status !== 'Approved by Editor') ? 0.4 : 1,
-                                  cursor: (isContentAdmin && art.status !== 'Approved by Editor') ? 'not-allowed' : 'pointer'
-                                }}
-                              >
-                                <CheckCircle size={14} color="#10b981" />
-                              </button>
-                            ) : (
-                              <button
-                                className="btn btn-sm btn-secondary"
-                                title="Archive Article"
-                                onClick={() => toggleArticleStatus(art.id, 'Archived')}
-                              >
-                                <Archive size={14} />
-                              </button>
-                            )
+                          {/* Publish Action: Content Admin, Editor, and Super Admin */}
+                          {art.status !== 'Published' ? (
+                            <button
+                              className="btn btn-sm btn-primary"
+                              title="Publish Article Live to Daily Brief"
+                              onClick={() => toggleArticleStatus(art.id, 'Published')}
+                              style={{
+                                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                color: '#ffffff',
+                                border: 'none',
+                                fontWeight: 800,
+                                fontSize: '0.725rem',
+                                padding: '4px 10px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                            >
+                              <CheckCircle size={13} color="#ffffff" />
+                              Publish
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-sm btn-secondary"
+                              title="Unpublish / Archive Article"
+                              onClick={() => toggleArticleStatus(art.id, 'Archived')}
+                              style={{ fontSize: '0.725rem', padding: '4px 8px' }}
+                            >
+                              <Archive size={13} />
+                              Unpublish
+                            </button>
                           )}
 
                           {/* Delete Action: Editors CANNOT delete published articles */}
