@@ -1532,6 +1532,9 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   const [showFloatingHighlightPicker, setShowFloatingHighlightPicker] = useState(false);
   const [showFloatingPicturesMenu, setShowFloatingPicturesMenu] = useState(false);
   const [showFloatingVideosMenu, setShowFloatingVideosMenu] = useState(false);
+  const [showFloatingFontFamilyMenu, setShowFloatingFontFamilyMenu] = useState(false);
+  const [showFloatingFontSizeMenu, setShowFloatingFontSizeMenu] = useState(false);
+  const [showFloatingStylesMenu, setShowFloatingStylesMenu] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
   const blobUrlsRef = useRef([]);
@@ -2767,51 +2770,99 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     setShowTextBoxMenu(false);
   };
 
+  const fontSizesList = ['9px', '10px', '11px', '12px', '14px', '16px', '18px', '20px', '24px', '28px', '36px', '48px', '72px'];
+
   // Font family change
-  const handleFontFamilyChange = (font) => {
+  const applyFontFamilyToSelection = (font) => {
     setFontFamily(font);
-    execCmd('fontName', font);
+    restoreSelection();
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    if (selection.isCollapsed) {
+      let node = selection.anchorNode;
+      if (node?.nodeType === Node.TEXT_NODE) node = node.parentNode;
+      if (node && editorRef.current?.contains(node) && node !== editorRef.current) {
+        node.style.fontFamily = font;
+      }
+    } else {
+      document.execCommand('styleWithCSS', false, true);
+      document.execCommand('fontName', false, font);
+      document.execCommand('styleWithCSS', false, false);
+    }
+    saveSelection();
+    if (editorRef.current) {
+      setFormData(prev => ({ ...prev, content: editorRef.current.innerHTML }));
+    }
+  };
+
+  const handleFontFamilyChange = (font) => {
+    applyFontFamilyToSelection(font);
   };
 
   // Font size change
-  const handleFontSizeChange = (size) => {
+  const applyFontSizeToSelection = (size) => {
     setFontSize(size);
     restoreSelection();
     const selection = window.getSelection();
-    
-    if (selection) {
-      const focusNode = selection.focusNode;
-      const figcaption = focusNode?.nodeType === Node.TEXT_NODE ? focusNode.parentElement.closest('figcaption') : focusNode?.closest?.('figcaption');
+    if (!selection || selection.rangeCount === 0) return;
 
-      if (!selection.isCollapsed) {
-        try {
-          const span = document.createElement('span');
-          span.style.fontSize = size;
-          const range = selection.getRangeAt(0);
-          range.surroundContents(span);
-        } catch (e) {
-          document.execCommand('fontSize', false, '7');
-          if (editorRef.current) {
-            const fonts = editorRef.current.querySelectorAll('font[size="7"]');
-            fonts.forEach(f => {
-              f.removeAttribute('size');
-              f.style.fontSize = size;
-            });
-          }
-        }
-      } else if (figcaption) {
-        figcaption.style.fontSize = size;
-      } else {
-        document.execCommand('fontSize', false, '7');
-        if (editorRef.current) {
-          const fonts = editorRef.current.querySelectorAll('font[size="7"]');
-          fonts.forEach(f => {
-            f.removeAttribute('size');
-            f.style.fontSize = size;
-          });
-        }
+    if (selection.isCollapsed) {
+      let node = selection.anchorNode;
+      if (node?.nodeType === Node.TEXT_NODE) node = node.parentNode;
+      if (node && editorRef.current?.contains(node) && node !== editorRef.current) {
+        node.style.fontSize = size;
       }
-      saveSelection();
+    } else {
+      document.execCommand('styleWithCSS', false, true);
+      document.execCommand('fontSize', false, '7');
+      if (editorRef.current) {
+        const fonts = editorRef.current.querySelectorAll('font[size="7"], span[style*="font-size: -webkit-xxx-large"], span[style*="font-size: xx-large"]');
+        fonts.forEach(el => {
+          el.removeAttribute('size');
+          el.style.fontSize = size;
+        });
+      }
+      document.execCommand('styleWithCSS', false, false);
+    }
+    saveSelection();
+    if (editorRef.current) {
+      setFormData(prev => ({ ...prev, content: editorRef.current.innerHTML }));
+    }
+  };
+
+  const handleFontSizeChange = (size) => {
+    applyFontSizeToSelection(size);
+  };
+
+  const handleGrowFont = () => {
+    const currentIndex = fontSizesList.indexOf(fontSize);
+    const nextSize = (currentIndex >= 0 && currentIndex < fontSizesList.length - 1)
+      ? fontSizesList[currentIndex + 1]
+      : (currentIndex === -1 ? '18px' : fontSizesList[fontSizesList.length - 1]);
+    applyFontSizeToSelection(nextSize);
+  };
+
+  const handleShrinkFont = () => {
+    const currentIndex = fontSizesList.indexOf(fontSize);
+    const prevSize = (currentIndex > 0)
+      ? fontSizesList[currentIndex - 1]
+      : (currentIndex === -1 ? '14px' : fontSizesList[0]);
+    applyFontSizeToSelection(prevSize);
+  };
+
+  const applyStyleBlock = (tag) => {
+    restoreSelection();
+    if (tag === 'p') {
+      execCmd('formatBlock', '<p>');
+    } else if (tag === 'h1') {
+      execCmd('formatBlock', '<h1>');
+    } else if (tag === 'h2') {
+      execCmd('formatBlock', '<h2>');
+    } else if (tag === 'h3') {
+      execCmd('formatBlock', '<h3>');
+    } else if (tag === 'quote') {
+      execCmd('formatBlock', '<blockquote>');
     }
   };
 
@@ -4720,60 +4771,184 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                   >
                     {/* ROW 1: Font Family, Font Size, Grow/Shrink Font, Format Painter, Styles */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                      {/* Font Family Selector */}
-                      <select
-                        value={fontFamily}
-                        onChange={(e) => handleFontFamilyChange(e.target.value)}
-                        onMouseDown={preventFocusLoss}
-                        style={{
-                          background: 'rgba(255, 255, 255, 0.08)',
-                          border: '1px solid rgba(255, 255, 255, 0.2)',
-                          borderRadius: '4px',
-                          color: '#ffffff',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          padding: '2px 4px',
-                          maxWidth: '115px',
-                          outline: 'none',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="Aptos, sans-serif">Aptos (Body)</option>
-                        <option value="'Aptos Display', sans-serif">Aptos Display</option>
-                        <option value="Arial, sans-serif">Arial</option>
-                        <option value="Georgia, serif">Georgia</option>
-                        <option value="'Times New Roman', serif">Times New Roman</option>
-                        <option value="'Segoe UI', sans-serif">Segoe UI</option>
-                        <option value="Calibri, sans-serif">Calibri</option>
-                        <option value="Verdana, sans-serif">Verdana</option>
-                      </select>
+                      {/* Custom Font Family Dropdown */}
+                      <div style={{ position: 'relative' }}>
+                        <button
+                          type="button"
+                          onMouseDown={preventFocusLoss}
+                          onClick={() => {
+                            setShowFloatingFontFamilyMenu(!showFloatingFontFamilyMenu);
+                            setShowFloatingFontSizeMenu(false);
+                            setShowFloatingStylesMenu(false);
+                            setShowFloatingColorPicker(false);
+                            setShowFloatingHighlightPicker(false);
+                            setShowFloatingPicturesMenu(false);
+                            setShowFloatingVideosMenu(false);
+                          }}
+                          style={{
+                            ...miniBtnStyle,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '3px 8px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            minWidth: '100px',
+                            maxWidth: '125px',
+                            justifyContent: 'space-between',
+                            background: showFloatingFontFamilyMenu ? 'rgba(56, 189, 248, 0.25)' : miniBtnStyle.background
+                          }}
+                          title="Font Family"
+                        >
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {fontFamily.includes('Aptos Display') ? 'Aptos Display' : fontFamily.split(',')[0].replace(/'/g, '')}
+                          </span>
+                          <ChevronDown size={11} color="#94a3b8" />
+                        </button>
 
-                      {/* Font Size Selector */}
-                      <select
-                        value={fontSize}
-                        onChange={(e) => handleFontSizeChange(e.target.value)}
-                        onMouseDown={preventFocusLoss}
-                        style={{
-                          background: 'rgba(255, 255, 255, 0.08)',
-                          border: '1px solid rgba(255, 255, 255, 0.2)',
-                          borderRadius: '4px',
-                          color: '#ffffff',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          padding: '2px 4px',
-                          width: '52px',
-                          outline: 'none',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {['10px', '11px', '12px', '14px', '16px', '18px', '20px', '24px', '28px', '36px'].map(sz => (
-                          <option key={sz} value={sz}>{sz.replace('px', '')}</option>
-                        ))}
-                      </select>
+                        {showFloatingFontFamilyMenu && (
+                          <div
+                            onMouseDown={preventFocusLoss}
+                            style={{
+                              position: 'absolute',
+                              top: 'calc(100% + 6px)',
+                              left: '0',
+                              width: '160px',
+                              maxHeight: '220px',
+                              overflowY: 'auto',
+                              background: '#0f172a',
+                              border: '1px solid rgba(255, 255, 255, 0.25)',
+                              borderRadius: '8px',
+                              padding: '4px 0',
+                              boxShadow: '0 12px 30px rgba(0,0,0,0.85)',
+                              zIndex: 10001
+                            }}
+                          >
+                            {[
+                              { name: 'Aptos (Body)', val: 'Aptos, sans-serif' },
+                              { name: 'Aptos Display', val: "'Aptos Display', sans-serif" },
+                              { name: 'Arial', val: 'Arial, sans-serif' },
+                              { name: 'Georgia', val: 'Georgia, serif' },
+                              { name: 'Times New Roman', val: "'Times New Roman', serif" },
+                              { name: 'Segoe UI', val: "'Segoe UI', sans-serif" },
+                              { name: 'Calibri', val: 'Calibri, sans-serif' },
+                              { name: 'Verdana', val: 'Verdana, sans-serif' },
+                              { name: 'Courier New', val: "'Courier New', monospace" }
+                            ].map(item => (
+                              <button
+                                key={item.name}
+                                type="button"
+                                onMouseDown={preventFocusLoss}
+                                onClick={() => {
+                                  applyFontFamilyToSelection(item.val);
+                                  setShowFloatingFontFamilyMenu(false);
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '5px 10px',
+                                  background: fontFamily === item.val ? 'rgba(56,189,248,0.2)' : 'transparent',
+                                  border: 'none',
+                                  color: '#fff',
+                                  fontSize: '11px',
+                                  fontFamily: item.val,
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                  display: 'block'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = fontFamily === item.val ? 'rgba(56,189,248,0.2)' : 'transparent'}
+                              >
+                                {item.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Custom Font Size Dropdown */}
+                      <div style={{ position: 'relative' }}>
+                        <button
+                          type="button"
+                          onMouseDown={preventFocusLoss}
+                          onClick={() => {
+                            setShowFloatingFontSizeMenu(!showFloatingFontSizeMenu);
+                            setShowFloatingFontFamilyMenu(false);
+                            setShowFloatingStylesMenu(false);
+                            setShowFloatingColorPicker(false);
+                            setShowFloatingHighlightPicker(false);
+                            setShowFloatingPicturesMenu(false);
+                            setShowFloatingVideosMenu(false);
+                          }}
+                          style={{
+                            ...miniBtnStyle,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            padding: '3px 6px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            minWidth: '48px',
+                            justifyContent: 'space-between',
+                            background: showFloatingFontSizeMenu ? 'rgba(56, 189, 248, 0.25)' : miniBtnStyle.background
+                          }}
+                          title="Font Size"
+                        >
+                          <span>{fontSize.replace('px', '')}</span>
+                          <ChevronDown size={11} color="#94a3b8" />
+                        </button>
+
+                        {showFloatingFontSizeMenu && (
+                          <div
+                            onMouseDown={preventFocusLoss}
+                            style={{
+                              position: 'absolute',
+                              top: 'calc(100% + 6px)',
+                              left: '0',
+                              width: '70px',
+                              maxHeight: '200px',
+                              overflowY: 'auto',
+                              background: '#0f172a',
+                              border: '1px solid rgba(255, 255, 255, 0.25)',
+                              borderRadius: '8px',
+                              padding: '4px 0',
+                              boxShadow: '0 12px 30px rgba(0,0,0,0.85)',
+                              zIndex: 10001
+                            }}
+                          >
+                            {['9px', '10px', '11px', '12px', '14px', '16px', '18px', '20px', '22px', '24px', '26px', '28px', '36px', '48px', '72px'].map(sz => (
+                              <button
+                                key={sz}
+                                type="button"
+                                onMouseDown={preventFocusLoss}
+                                onClick={() => {
+                                  applyFontSizeToSelection(sz);
+                                  setShowFloatingFontSizeMenu(false);
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '4px 8px',
+                                  background: fontSize === sz ? 'rgba(56,189,248,0.2)' : 'transparent',
+                                  border: 'none',
+                                  color: '#fff',
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  textAlign: 'center',
+                                  display: 'block'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = fontSize === sz ? 'rgba(56,189,248,0.2)' : 'transparent'}
+                              >
+                                {sz.replace('px', '')}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
                       {/* Increase & Decrease Font Size */}
-                      <button type="button" onMouseDown={preventFocusLoss} onClick={() => execCmd('increaseFontSize')} style={miniBtnStyle} title="Increase Font Size (A^)">A^</button>
-                      <button type="button" onMouseDown={preventFocusLoss} onClick={() => execCmd('decreaseFontSize')} style={miniBtnStyle} title="Decrease Font Size (Av)">Av</button>
+                      <button type="button" onMouseDown={preventFocusLoss} onClick={handleGrowFont} style={miniBtnStyle} title="Increase Font Size (A^)">A^</button>
+                      <button type="button" onMouseDown={preventFocusLoss} onClick={handleShrinkFont} style={miniBtnStyle} title="Decrease Font Size (Av)">Av</button>
 
                       {/* Format Painter */}
                       <button 
@@ -4787,37 +4962,86 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                       </button>
 
                       {/* Quick Styles / Heading Dropdown */}
-                      <select
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === 'p') execCmd('formatBlock', '<p>');
-                          else if (val === 'h1') handleHeading1();
-                          else if (val === 'h2') handleHeading2();
-                          else if (val === 'h3') handleHeading3();
-                          else if (val === 'quote') execCmd('formatBlock', '<blockquote>');
-                          e.target.value = '';
-                        }}
-                        defaultValue=""
-                        onMouseDown={preventFocusLoss}
-                        style={{
-                          background: 'rgba(255, 255, 255, 0.08)',
-                          border: '1px solid rgba(255, 255, 255, 0.2)',
-                          borderRadius: '4px',
-                          color: '#38bdf8',
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          padding: '2px 4px',
-                          outline: 'none',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="" disabled>Styles ▾</option>
-                        <option value="p">Normal Text</option>
-                        <option value="h1">Heading 1</option>
-                        <option value="h2">Heading 2</option>
-                        <option value="h3">Heading 3</option>
-                        <option value="quote">Quote / Callout</option>
-                      </select>
+                      <div style={{ position: 'relative' }}>
+                        <button
+                          type="button"
+                          onMouseDown={preventFocusLoss}
+                          onClick={() => {
+                            setShowFloatingStylesMenu(!showFloatingStylesMenu);
+                            setShowFloatingFontFamilyMenu(false);
+                            setShowFloatingFontSizeMenu(false);
+                            setShowFloatingColorPicker(false);
+                            setShowFloatingHighlightPicker(false);
+                            setShowFloatingPicturesMenu(false);
+                            setShowFloatingVideosMenu(false);
+                          }}
+                          style={{
+                            ...miniBtnStyle,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            padding: '3px 8px',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: '#38bdf8',
+                            background: showFloatingStylesMenu ? 'rgba(56, 189, 248, 0.25)' : miniBtnStyle.background
+                          }}
+                          title="Styles & Headings"
+                        >
+                          <span>Styles ▾</span>
+                        </button>
+
+                        {showFloatingStylesMenu && (
+                          <div
+                            onMouseDown={preventFocusLoss}
+                            style={{
+                              position: 'absolute',
+                              top: 'calc(100% + 6px)',
+                              left: '0',
+                              width: '150px',
+                              background: '#0f172a',
+                              border: '1px solid rgba(255, 255, 255, 0.25)',
+                              borderRadius: '8px',
+                              padding: '4px 0',
+                              boxShadow: '0 12px 30px rgba(0,0,0,0.85)',
+                              zIndex: 10001
+                            }}
+                          >
+                            {[
+                              { label: 'Normal Text', tag: 'p', style: { fontSize: '12px', color: '#f8fafc' } },
+                              { label: 'Heading 1', tag: 'h1', style: { fontSize: '15px', fontWeight: 800, color: '#38bdf8' } },
+                              { label: 'Heading 2', tag: 'h2', style: { fontSize: '13.5px', fontWeight: 700, color: '#60a5fa' } },
+                              { label: 'Heading 3', tag: 'h3', style: { fontSize: '12.5px', fontWeight: 600, color: '#93c5fd' } },
+                              { label: 'Quote / Callout', tag: 'quote', style: { fontSize: '12px', fontStyle: 'italic', color: '#facc15' } }
+                            ].map(item => (
+                              <button
+                                key={item.tag}
+                                type="button"
+                                onMouseDown={preventFocusLoss}
+                                onClick={() => {
+                                  applyStyleBlock(item.tag);
+                                  setShowFloatingStylesMenu(false);
+                                }}
+                                style={{
+                                  width: '100%',
+                                  padding: '6px 12px',
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: '#fff',
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                  display: 'block',
+                                  ...item.style
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                              >
+                                {item.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* ROW 2: Bold, Italic, Underline, Highlight, Font Color, Align, Lists, Link, Insert Picture, Insert Video */}
