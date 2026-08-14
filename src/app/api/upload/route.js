@@ -26,7 +26,7 @@ export async function POST(req) {
     const adminFilePath = path.join(adminUploadDir, filename);
     fs.writeFileSync(adminFilePath, buffer);
 
-    // Also sync to Reader App public folder so both apps serve the video statically
+    // Sync to Reader App public folder if accessible
     const readerUploadDir = path.join(process.cwd(), '..', 'Daily_Brief', 'public', 'uploads');
     try {
       if (!fs.existsSync(readerUploadDir)) {
@@ -35,11 +35,26 @@ export async function POST(req) {
       const readerFilePath = path.join(readerUploadDir, filename);
       fs.writeFileSync(readerFilePath, buffer);
     } catch (e) {
-      console.warn('Could not sync upload to reader app (non-fatal):', e?.message);
+      console.warn('Could not sync upload to reader app directory (non-fatal):', e?.message);
     }
 
-    const publicUrl = `/uploads/${filename}`;
-    return NextResponse.json({ success: true, url: publicUrl });
+    // Determine host origin for absolute cross-port resolution
+    const host = req.headers.get('host') || 'localhost:5174';
+    const protocol = req.headers.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
+    const origin = `${protocol}://${host}`;
+
+    // Priority: Custom Cloud CDN URL (if configured), or absolute server URL, or relative fallback
+    const customCdn = process.env.NEXT_PUBLIC_MEDIA_URL || process.env.NEXT_PUBLIC_R2_URL;
+    const publicUrl = customCdn
+      ? `${customCdn.replace(/\/$/, '')}/${filename}`
+      : `${origin}/uploads/${filename}`;
+
+    return NextResponse.json({
+      success: true,
+      url: publicUrl,
+      relativePath: `/uploads/${filename}`,
+      filename
+    });
   } catch (err) {
     console.error('File Upload Error:', err);
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
