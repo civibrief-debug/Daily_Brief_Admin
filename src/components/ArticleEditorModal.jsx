@@ -353,6 +353,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
       const figTarget = mediaWrapper || e.target;
       setSelectedImageNode(figTarget);
       updateImageBounds(figTarget);
+      dismissFloatingTool();
 
       const isVid = (figTarget.tagName === 'VIDEO' || 
                     figTarget.classList?.contains('video-wrapper') || 
@@ -398,7 +399,24 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     // 4. Caret placement for any click on text / paragraph / canvas / empty space
     if (!editorRef.current) return;
 
-    // Helper to focus and place caret at end of container
+    // Helper to get caret range from mouse coordinates
+    const getCaretRangeFromClick = (clientX, clientY) => {
+      if (document.caretRangeFromPoint) {
+        return document.caretRangeFromPoint(clientX, clientY);
+      }
+      if (document.caretPositionFromPoint) {
+        const pos = document.caretPositionFromPoint(clientX, clientY);
+        if (pos && pos.offsetNode) {
+          const range = document.createRange();
+          range.setStart(pos.offsetNode, pos.offset);
+          range.collapse(true);
+          return range;
+        }
+      }
+      return null;
+    };
+
+    // Helper to focus and place caret inside an empty container
     const placeCaretAtEnd = (container) => {
       if (!container || !editorRef.current) return;
       editorRef.current.focus({ preventScroll: true });
@@ -424,25 +442,29 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         sel.addRange(range);
         saveSelection();
       }
-
-      // Re-assert selection on the next tick so mouseup/click doesn't wipe it out
-      setTimeout(() => {
-        if (!editorRef.current) return;
-        editorRef.current.focus({ preventScroll: true });
-        const s = window.getSelection();
-        if (s && targetTextNode && document.body.contains(targetTextNode)) {
-          const r = document.createRange();
-          r.setStart(targetTextNode, targetTextNode.textContent.length);
-          r.collapse(true);
-          s.removeAllRanges();
-          s.addRange(r);
-          saveSelection();
-        }
-      }, 0);
     };
 
     // If clicked on editor root (blank canvas around or below media)
     if (e.target === editorRef.current) {
+      const pointRange = getCaretRangeFromClick(e.clientX, e.clientY);
+      if (pointRange && editorRef.current.contains(pointRange.startContainer) && pointRange.startContainer !== editorRef.current) {
+        const container = pointRange.startContainer;
+        const insideMedia = container.nodeType === Node.ELEMENT_NODE 
+          ? container.closest('figure, img, video, iframe') 
+          : container.parentElement?.closest('figure, img, video, iframe');
+        
+        if (!insideMedia) {
+          const sel = window.getSelection();
+          if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(pointRange);
+            saveSelection();
+            return;
+          }
+        }
+      }
+
+      // If clicked below all children or empty canvas
       e.preventDefault();
       editorRef.current.focus({ preventScroll: true });
       const children = Array.from(editorRef.current.children);
@@ -460,61 +482,26 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         return;
       }
 
-      let closestBlock = null;
-      let minDistance = Infinity;
-      for (const child of children) {
-        const rect = child.getBoundingClientRect();
-        if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
-          closestBlock = child;
-          break;
-        }
-        const dist = Math.min(Math.abs(e.clientY - rect.top), Math.abs(e.clientY - rect.bottom));
-        if (dist < minDistance) {
-          minDistance = dist;
-          closestBlock = child;
-        }
-      }
-
-      if (closestBlock) {
-        if (closestBlock.tagName === 'FIGURE' || closestBlock.classList.contains('img-wrapper') || closestBlock.classList.contains('video-wrapper')) {
-          const isAbove = e.clientY < closestBlock.getBoundingClientRect().top + closestBlock.offsetHeight / 2;
-          if (isAbove) {
-            let prevP = closestBlock.previousElementSibling;
-            if (!prevP || prevP.tagName === 'FIGURE') {
-              prevP = document.createElement('p');
-              prevP.className = 'article-continuation-p';
-              prevP.style.lineHeight = '1.7';
-              prevP.style.marginBottom = '16px';
-              prevP.style.minHeight = '28px';
-              prevP.style.display = 'block';
-              prevP.style.width = '100%';
-              prevP.innerHTML = '\u200B';
-              editorRef.current.insertBefore(prevP, closestBlock);
-            }
-            placeCaretAtEnd(prevP);
-          } else {
-            let nextP = closestBlock.nextElementSibling;
-            if (!nextP || nextP.tagName === 'FIGURE' || nextP.classList.contains('img-wrapper') || nextP.classList.contains('video-wrapper')) {
-              nextP = document.createElement('p');
-              nextP.className = 'article-continuation-p';
-              nextP.style.lineHeight = '1.7';
-              nextP.style.marginTop = '16px';
-              nextP.style.marginBottom = '16px';
-              nextP.style.minHeight = '28px';
-              nextP.style.display = 'block';
-              nextP.style.width = '100%';
-              nextP.innerHTML = '\u200B';
-              if (closestBlock.nextSibling) {
-                editorRef.current.insertBefore(nextP, closestBlock.nextSibling);
-              } else {
-                editorRef.current.appendChild(nextP);
-              }
-            }
-            placeCaretAtEnd(nextP);
-          }
+      const lastChild = children[children.length - 1];
+      const lastRect = lastChild.getBoundingClientRect();
+      if (e.clientY > lastRect.bottom) {
+        let newP;
+        if (lastChild.tagName === 'P' && (lastChild.textContent.trim() === '' || lastChild.textContent === '\u200B')) {
+          newP = lastChild;
         } else {
-          placeCaretAtEnd(closestBlock);
+          newP = document.createElement('p');
+          newP.className = 'article-continuation-p';
+          newP.style.lineHeight = '1.7';
+          newP.style.marginTop = '16px';
+          newP.style.marginBottom = '16px';
+          newP.style.minHeight = '28px';
+          newP.style.display = 'block';
+          newP.style.width = '100%';
+          newP.innerHTML = '\u200B';
+          editorRef.current.appendChild(newP);
         }
+        placeCaretAtEnd(newP);
+        return;
       }
       return;
     }
@@ -529,26 +516,8 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         return;
       }
 
-      // If user is single clicking far past the end of the text line, place caret at the end
-      if (e.detail === 1) {
-        const lastChild = clickedBlock.lastChild;
-        if (lastChild) {
-          let lastRect = null;
-          if (lastChild.nodeType === Node.ELEMENT_NODE) {
-            lastRect = lastChild.getBoundingClientRect();
-          } else if (lastChild.parentElement) {
-            lastRect = lastChild.parentElement.getBoundingClientRect();
-          }
-
-          if (lastRect && e.clientX > lastRect.right + 25) {
-            placeCaretAtEnd(clickedBlock);
-            return;
-          }
-        }
-      }
-
-      // For standard clicks, double-clicks (word selection), triple-clicks, and drag selections:
-      // Allow browser native selection to operate naturally so text selection and floating toolbar work seamlessly
+      // For standard clicks anywhere on text:
+      // Allow browser native selection and caret placement to operate with exact precision
     }
   };
 
@@ -1553,11 +1522,24 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   const commentsContainerRef = useRef(null);
   const prevCommentsLengthRef = useRef(0);
 
+  // Helper to reliably dismiss the floating text formatting toolbox
+  const dismissFloatingTool = () => {
+    setFloatingTool(prev => ({ ...prev, visible: false }));
+    setShowFloatingColorPicker(false);
+    setShowFloatingHighlightPicker(false);
+    setShowFloatingPicturesMenu(false);
+    setShowFloatingVideosMenu(false);
+    setShowFloatingFontFamilyMenu(false);
+    setShowFloatingFontSizeMenu(false);
+    setShowFloatingStylesMenu(false);
+  };
+
   useEffect(() => {
     setSelectedImageNode(null);
     setImageBounds(null);
     setShowLayoutOptions(false);
     setActiveTab('Home');
+    dismissFloatingTool();
 
     const initialAuthor = isSuperAdmin 
       ? (articleToEdit?.author || currentUser?.name || 'Staff Reporter') 
@@ -1607,6 +1589,9 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   // Auto-switch ribbon tab to 'Video Format' or 'Picture Format' when media is selected
   useEffect(() => {
     if (selectedImageNode) {
+      // Dismiss floating text toolbox whenever an image, video, or embed is selected
+      dismissFloatingTool();
+
       const isVideo = (selectedImageNode.tagName === 'VIDEO' ||
         selectedImageNode.classList?.contains('video-wrapper') ||
         selectedImageNode.classList?.contains('youtube-video-wrapper') ||
@@ -2071,6 +2056,15 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   };
 
   const handleEditorDoubleClick = (e) => {
+    // If double clicking on an image, video, or media wrapper, DO NOT open the text floating toolbar
+    const isDirectMedia = ['IMG', 'VIDEO', 'IFRAME'].includes(e.target?.tagName);
+    const mediaWrapper = e.target?.closest?.('figure, .img-wrapper, .video-wrapper, .social-embed-wrapper, .social-embed-card, .video-fallback-card');
+    const isFigcaption = !!e.target?.closest?.('figcaption');
+    if (!isFigcaption && (isDirectMedia || mediaWrapper)) {
+      dismissFloatingTool();
+      return;
+    }
+
     saveSelection();
 
     const selection = window.getSelection();
@@ -2127,6 +2121,8 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   const handleDeviceFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    dismissFloatingTool();
+    setShowPicturesMenu(false);
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -2169,6 +2165,10 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
   // Universal Insert Image / Media / Social Embed Helper into editor
   const insertImageHtml = async (src, caption = '', align = 'center') => {
+    dismissFloatingTool();
+    setShowPicturesMenu(false);
+    setShowUrlModal(false);
+    setShowStockModal(false);
     restoreSelection();
     if (!editorRef.current) return;
 
@@ -2299,6 +2299,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   const handleVideoFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    dismissFloatingTool();
     setShowVideosMenu(false);
 
     try {
@@ -2338,12 +2339,14 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   };
 
   const insertStockVideo = (videoUrl, title) => {
+    dismissFloatingTool();
     insertVideoHtml(videoUrl, title || 'Stock Video Clip', 'video');
     setShowStockVideoModal(false);
   };
 
   const insertOnlineVideo = () => {
     if (!videoUrlInput.trim()) return;
+    dismissFloatingTool();
     const captionText = videoCaptionInput.trim();
     const parsed = parseVideoUrl(videoUrlInput.trim(), captionText, 'center');
     if (!parsed.html) return;
@@ -2389,6 +2392,10 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   };
 
   const insertVideoHtml = (src, captionText = '', type = 'video', customId = null) => {
+    dismissFloatingTool();
+    setShowVideosMenu(false);
+    setShowStockVideoModal(false);
+    setShowOnlineVideoModal(false);
     restoreSelection();
     if (!editorRef.current) return;
     const uniqueId = customId || ('vid-' + Date.now());
@@ -2523,6 +2530,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   };
 
   const openLinkModal = () => {
+    dismissFloatingTool();
     restoreSelection();
     setIsImageLinkEditing(false);
     const sel = window.getSelection();
@@ -2680,6 +2688,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
   // MS Word Built-in Text Box Gallery Insert Helper
   const insertTextBoxTemplate = (templateType) => {
+    dismissFloatingTool();
     restoreSelection();
     if (!editorRef.current) return;
 
@@ -2900,6 +2909,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
   // Insert Table
   const insertTable = () => {
+    dismissFloatingTool();
     const tableHtml = `
       <table style="width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; overflow: hidden;">
         <thead>
@@ -2929,6 +2939,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
   // Insert Callout Box
   const insertCallout = () => {
+    dismissFloatingTool();
     const calloutHtml = `
       <div style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(15, 23, 42, 0.6) 100%); border-left: 4px solid #3b82f6; border-radius: 8px; padding: 14px 18px; margin: 18px 0; color: #f8fafc;">
         <strong style="color: #60a5fa; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; display: block; margin-bottom: 4px;">KEY TAKEAWAY REPORT</strong>
@@ -4749,7 +4760,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 )}
 
                 {/* FLOATING QUICK FORMATTING & INSERTION TOOLBAR (MICROSOFT WORD 2-ROW DESIGN) */}
-                {floatingTool.visible && (
+                {floatingTool.visible && !selectedImageNode && (
                   <div 
                     className="floating-format-toolbar"
                     onMouseDown={(e) => e.stopPropagation()}
