@@ -47,6 +47,7 @@ import {
 } from 'lucide-react';
 
 import { categorySubSectionsMap } from './AdminUserModal';
+import ArticleAdPlacementManager from './ArticleAdPlacementManager';
 
 export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = null }) {
   const { 
@@ -1561,7 +1562,32 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         summary: articleToEdit.summary || '',
         content: articleToEdit.content || '',
         imageUrl: articleToEdit.imageUrl || 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
-        featured: !!articleToEdit.featured
+        featured: !!articleToEdit.featured,
+        // Persistent Per-Article Multi-Ad Placements Configuration
+        adPlacements: Array.isArray(articleToEdit.adPlacements) ? articleToEdit.adPlacements : (articleToEdit.placeholderAdEnabled ? [{
+          id: 'ad-place-1',
+          enabled: true,
+          placementType: articleToEdit.placeholderAdPositionType || 'after_paragraph',
+          placementValue: articleToEdit.placeholderAdPositionValue || '2',
+          alignment: articleToEdit.placeholderAdAlignment || 'center',
+          columnPosition: articleToEdit.placeholderAdAlignment === 'left' ? 'left_col' : (articleToEdit.placeholderAdAlignment === 'right' ? 'right_col' : 'full'),
+          sortOrder: 1,
+          widthMode: 'responsive_banner',
+          label: articleToEdit.placeholderAdLabel || 'Advertisement',
+          contentType: articleToEdit.placeholderAdContentType || 'placeholder',
+          content: articleToEdit.placeholderAdContent || '',
+          dropZoneId: articleToEdit.placeholderAdDropZoneId || 'dropzone-p-2'
+        }] : []),
+        placeholderAdEnabled: !!articleToEdit.placeholderAdEnabled,
+        placeholderAdPositionType: articleToEdit.placeholderAdPositionType || 'after_paragraph',
+        placeholderAdPositionValue: articleToEdit.placeholderAdPositionValue || '2',
+        placeholderAdAlignment: articleToEdit.placeholderAdAlignment || 'center',
+        placeholderAdLabel: articleToEdit.placeholderAdLabel || 'Advertisement',
+        placeholderAdContentType: articleToEdit.placeholderAdContentType || 'placeholder',
+        placeholderAdContent: articleToEdit.placeholderAdContent || '',
+        placeholderAdDropZoneId: articleToEdit.placeholderAdDropZoneId || 'dropzone-p-2',
+        placeholderAdOrder: articleToEdit.placeholderAdOrder !== undefined ? articleToEdit.placeholderAdOrder : 2,
+        placeholderAdManualPlacement: !!articleToEdit.placeholderAdManualPlacement
       });
       if (editorRef.current) {
         editorRef.current.innerHTML = articleToEdit.content || '';
@@ -1578,7 +1604,18 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         summary: '',
         content: '',
         imageUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
-        featured: false
+        featured: false,
+        adPlacements: [],
+        placeholderAdEnabled: false,
+        placeholderAdPositionType: 'after_paragraph',
+        placeholderAdPositionValue: '2',
+        placeholderAdAlignment: 'center',
+        placeholderAdLabel: 'Advertisement',
+        placeholderAdContentType: 'placeholder',
+        placeholderAdContent: '',
+        placeholderAdDropZoneId: 'dropzone-p-2',
+        placeholderAdOrder: 2,
+        placeholderAdManualPlacement: false
       });
       if (editorRef.current) {
         editorRef.current.innerHTML = '';
@@ -2995,6 +3032,8 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
       const payload = {
         ...formData,
+        isSuperAdmin,
+        userRole: currentUser?.roleId || (isSuperAdmin ? 'super_admin' : 'content_admin'),
         authorId: formData.authorId || currentUser?.id || 'adm-author',
         author: isSuperAdmin ? formData.author : (currentUser?.name || formData.author || 'Staff Reporter'),
         content: sanitizedBody,
@@ -3357,6 +3396,55 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
             onChange={handleVideoFileUpload}
           />
 
+          {/* Super Admin Quick Multi-Ad Status Bar */}
+          {isSuperAdmin && (() => {
+            const activeCount = (Array.isArray(formData.adPlacements) ? formData.adPlacements.filter(a => a.enabled) : (formData.placeholderAdEnabled ? [1] : [])).length;
+            return (
+              <div style={{
+                background: activeCount > 0 ? 'rgba(168, 85, 247, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                border: activeCount > 0 ? '1px solid rgba(168, 85, 247, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '8px',
+                padding: '8px 14px',
+                marginBottom: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '8px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 800, color: activeCount > 0 ? '#c084fc' : '#94a3b8' }}>
+                    {activeCount > 0 ? `📢 Multi-Ad Newspaper Layout: ${activeCount} ACTIVE AD${activeCount > 1 ? 'S' : ''}` : '📢 Multi-Ad Newspaper Layout: NO ADS PLACED'}
+                  </span>
+                  {activeCount > 0 && Array.isArray(formData.adPlacements) && (
+                    <span style={{ fontSize: '11px', color: '#cbd5e1' }}>
+                      ({formData.adPlacements.filter(a => a.enabled).map((a, i) => `#${i + 1}: ${a.alignment?.toUpperCase()} (${a.dropZoneId?.replace('dropzone-', '') || 'P-2'})`).join(' • ')})
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('Ad Placement')}
+                  style={{
+                    background: 'rgba(234, 179, 8, 0.15)',
+                    border: '1px solid rgba(234, 179, 8, 0.3)',
+                    color: '#facc15',
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <span>⚙️ Multi-Ad Canvas ({activeCount})</span>
+                </button>
+              </div>
+            );
+          })()}
+
           {/* MS WORD STYLE DOCUMENT FORMATTING CONTAINER (Matches Image 2) */}
           <div style={{
             border: '1px solid rgba(255, 255, 255, 0.18)',
@@ -3375,29 +3463,59 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
               alignItems: 'center',
               padding: '0 8px'
             }}>
-              {['Home', 'Insert', ...(selectedImageNode ? [(selectedImageNode.tagName === 'VIDEO' || selectedImageNode.tagName === 'IFRAME' || selectedImageNode.classList?.contains('video-wrapper') || selectedImageNode.querySelector?.('video, iframe')) ? 'Video Format' : 'Picture Format'] : [])].map(tab => (
-                <button
-                  key={tab}
-                  type="button"
-                  onMouseDown={preventFocusLoss}
-                  onClick={() => setActiveTab(tab)}
-                  style={{
-                    padding: '8px 14px',
-                    fontSize: '12px',
-                    fontWeight: activeTab === tab ? 800 : 600,
-                    color: tab === 'Video Format' ? '#c084fc' : (tab === 'Picture Format' ? '#38bdf8' : (activeTab === tab ? '#ffffff' : '#94a3b8')),
-                    borderTop: 'none',
-                    borderLeft: 'none',
-                    borderRight: 'none',
-                    borderBottom: activeTab === tab ? (tab === 'Video Format' ? '2.5px solid #c084fc' : '2.5px solid #38bdf8') : '2.5px solid transparent',
-                    background: (tab === 'Video Format' && activeTab === 'Video Format') ? 'rgba(192, 132, 252, 0.15)' : ((tab === 'Picture Format' && activeTab === 'Picture Format') ? 'rgba(56, 189, 248, 0.15)' : 'none'),
-                    cursor: 'pointer',
-                    borderRadius: (tab === 'Video Format' || tab === 'Picture Format') ? '4px 4px 0 0' : '0'
-                  }}
-                >
-                  {tab === 'Video Format' ? '🎥 Video Format' : (tab === 'Picture Format' ? '🖼️ Picture Format' : tab)}
-                </button>
-              ))}
+              {['Home', 'Insert', ...(isSuperAdmin ? ['Ad Placement'] : []), ...(selectedImageNode ? [(selectedImageNode.tagName === 'VIDEO' || selectedImageNode.tagName === 'IFRAME' || selectedImageNode.classList?.contains('video-wrapper') || selectedImageNode.querySelector?.('video, iframe')) ? 'Video Format' : 'Picture Format'] : [])].map(tab => {
+                let tabLabel = tab;
+                let tabColor = activeTab === tab ? '#ffffff' : '#94a3b8';
+                let tabBorder = activeTab === tab ? '2.5px solid #38bdf8' : '2.5px solid transparent';
+                let tabBg = 'none';
+
+                if (tab === 'Video Format') {
+                  tabLabel = '🎥 Video Format';
+                  tabColor = '#c084fc';
+                  tabBorder = activeTab === tab ? '2.5px solid #c084fc' : '2.5px solid transparent';
+                  tabBg = activeTab === tab ? 'rgba(192, 132, 252, 0.15)' : 'none';
+                } else if (tab === 'Picture Format') {
+                  tabLabel = '🖼️ Picture Format';
+                  tabColor = '#38bdf8';
+                  tabBorder = activeTab === tab ? '2.5px solid #38bdf8' : '2.5px solid transparent';
+                  tabBg = activeTab === tab ? 'rgba(56, 189, 248, 0.15)' : 'none';
+                } else if (tab === 'Ad Placement') {
+                  const adCount = (Array.isArray(formData.adPlacements) ? formData.adPlacements.filter(a => a.enabled) : (formData.placeholderAdEnabled ? [1] : [])).length;
+                  tabLabel = `📢 Ad Placement (${adCount} Active) 👑`;
+                  tabColor = activeTab === tab ? '#facc15' : '#eab308';
+                  tabBorder = activeTab === tab ? '2.5px solid #eab308' : '2.5px solid transparent';
+                  tabBg = activeTab === tab ? 'rgba(234, 179, 8, 0.15)' : 'none';
+                }
+
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onMouseDown={preventFocusLoss}
+                    onClick={() => {
+                      if (editorRef.current) {
+                        setFormData(prev => ({ ...prev, content: editorRef.current.innerHTML }));
+                      }
+                      setActiveTab(tab);
+                    }}
+                    style={{
+                      padding: '8px 14px',
+                      fontSize: '12px',
+                      fontWeight: activeTab === tab ? 800 : 600,
+                      color: tabColor,
+                      borderTop: 'none',
+                      borderLeft: 'none',
+                      borderRight: 'none',
+                      borderBottom: tabBorder,
+                      background: tabBg,
+                      cursor: 'pointer',
+                      borderRadius: (tab === 'Video Format' || tab === 'Picture Format' || tab === 'Ad Placement') ? '4px 4px 0 0' : '0'
+                    }}
+                  >
+                    {tabLabel}
+                  </button>
+                );
+              })}
             </div>
 
             {/* TAB: HOME RIBBON TOOLBAR (Image 2 Exact Section Division: Clipboard | Font | Paragraph) */}
@@ -4591,19 +4709,36 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 </div>
               )}
 
+              {/* TAB: AD PLACEMENT (SUPER ADMIN ONLY) */}
+              {activeTab === 'Ad Placement' && isSuperAdmin && (
+                <div style={{
+                  background: '#0a0f1d',
+                  padding: '16px',
+                  borderRadius: '0 0 12px 12px'
+                }}>
+                  <ArticleAdPlacementManager
+                    formData={{
+                      ...formData,
+                      content: editorRef.current ? editorRef.current.innerHTML : (formData.content || '')
+                    }}
+                    setFormData={setFormData}
+                    isSuperAdmin={isSuperAdmin}
+                  />
+                </div>
+              )}
 
-
-              {/* EDITOR VIEWPORT CONTAINER: Strictly clips selection overlay & prevents leaking into toolbar */}
-              <div 
-                className="editor-viewport-container" 
-                style={{ 
-                  position: 'relative', 
-                  overflow: 'hidden', 
-                  borderRadius: '0 0 12px 12px',
-                  background: '#04070d',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
-                }}
-              >
+              {/* EDITOR VIEWPORT CONTAINER: Strictly clips selection overlay & prevents leaking into toolbar (Hidden in Ad Placement tab) */}
+              {activeTab !== 'Ad Placement' && (
+                <div 
+                  className="editor-viewport-container" 
+                  style={{ 
+                    position: 'relative', 
+                    overflow: 'hidden', 
+                    borderRadius: '0 0 12px 12px',
+                    background: '#04070d',
+                    border: '1px solid rgba(255, 255, 255, 0.1)'
+                  }}
+                >
                 {/* IMAGE / VIDEO SELECTION BOUNDING BOX & 8 RESIZE HANDLES OVERLAY */}
                 {selectedImageNode && imageBounds && (
                   <div
@@ -5599,6 +5734,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 </div>
               )}
             </div>
+          )}
 
           </div>
 
@@ -6372,23 +6508,53 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                   </div>
                 )}
 
-                {/* Rich Body Content */}
-                <div
-                  className="preview-article-body"
-                  onClick={(e) => {
-                    const img = e.target.closest('img');
-                    if (img) {
-                      const sourceUrl = img.getAttribute('data-source-url') || img.closest('a')?.getAttribute('href');
-                      if (sourceUrl && sourceUrl !== '#' && !sourceUrl.startsWith('javascript:')) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        window.open(sourceUrl, '_blank', 'noopener,noreferrer');
-                      }
-                    }
-                  }}
-                  dangerouslySetInnerHTML={{ __html: currentBodyHtml.trim() ? currentBodyHtml : '<p style="color:#94a3b8; font-style:italic;">No article body text written yet.</p>' }}
-                  style={{ fontSize: '16px', lineHeight: '1.8', color: '#cbd5e1' }}
-                />
+                {/* Rich Body Content with Real Live Injected Multi-Ads */}
+                {(() => {
+                  const rawHtml = currentBodyHtml.trim();
+                  if (!rawHtml) {
+                    return <p style={{ color: '#94a3b8', fontStyle: 'italic' }}>No article body text written yet.</p>;
+                  }
+
+                  const activeAds = (Array.isArray(formData.adPlacements) ? formData.adPlacements.filter(a => a && a.enabled) : (formData.placeholderAdEnabled ? [formData] : []));
+                  
+                  return (
+                    <div
+                      className="preview-article-body"
+                      onClick={(e) => {
+                        const img = e.target.closest('img');
+                        if (img) {
+                          const sourceUrl = img.getAttribute('data-source-url') || img.closest('a')?.getAttribute('href');
+                          if (sourceUrl && sourceUrl !== '#' && !sourceUrl.startsWith('javascript:')) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            window.open(sourceUrl, '_blank', 'noopener,noreferrer');
+                          }
+                        }
+                      }}
+                      style={{ fontSize: '16px', lineHeight: '1.8', color: '#cbd5e1' }}
+                    >
+                      <div dangerouslySetInnerHTML={{ __html: rawHtml }} />
+                      
+                      {/* Active Ad Placement Summary Tags */}
+                      {activeAds.length > 0 && (
+                        <div style={{ marginTop: '30px', padding: '16px 20px', background: 'rgba(168, 85, 247, 0.12)', border: '1.5px solid rgba(168, 85, 247, 0.4)', borderRadius: '10px' }}>
+                          <div style={{ fontSize: '12px', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>📢 Super Admin Live Ad Placements on This Article ({activeAds.length} Active):</span>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {activeAds.map((ad, i) => (
+                              <div key={ad.id || i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.5)', padding: '8px 14px', borderRadius: '6px', fontSize: '12px', color: '#f8fafc', border: '1px solid rgba(168,85,247,0.3)' }}>
+                                <span style={{ fontWeight: 700 }}>Ad #{i + 1}: {ad.label || 'Advertisement'}</span>
+                                <span style={{ color: '#38bdf8', fontWeight: 600 }}>📍 Target: {ad.dropZoneId?.replace('dropzone-', '').toUpperCase() || 'P-2'}</span>
+                                <span style={{ background: '#7c3aed', padding: '3px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 800 }}>ALIGN: {ad.alignment?.toUpperCase() || 'CENTER'}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Preview Footer Actions */}

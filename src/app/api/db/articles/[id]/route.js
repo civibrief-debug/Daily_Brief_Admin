@@ -37,15 +37,46 @@ export async function PUT(req, { params }) {
     const { id } = await params;
     const body = await req.json();
     const db = getDb();
-
     const index = (db.articles || []).findIndex(a => a.id === id);
     if (index === -1) {
       return NextResponse.json({ success: false, error: 'Article not found' }, { status: 404 });
     }
 
+    const isSuperAdmin = body.userRole === 'super_admin' || body.isSuperAdmin === true;
+    const existing = db.articles[index];
+
+    // If user is not super_admin, protect and preserve the existing ad settings from modification
+    const adSettings = isSuperAdmin ? {
+      placeholderAdEnabled: body.placeholderAdEnabled !== undefined ? !!body.placeholderAdEnabled : (existing.placeholderAdEnabled || false),
+      placeholderAdPositionType: body.placeholderAdPositionType || existing.placeholderAdPositionType || 'after_paragraph',
+      placeholderAdPositionValue: body.placeholderAdPositionValue !== undefined ? body.placeholderAdPositionValue : (existing.placeholderAdPositionValue || '2'),
+      placeholderAdAlignment: body.placeholderAdAlignment || existing.placeholderAdAlignment || 'center',
+      placeholderAdLabel: body.placeholderAdLabel || existing.placeholderAdLabel || 'Advertisement',
+      placeholderAdContentType: body.placeholderAdContentType || existing.placeholderAdContentType || 'placeholder',
+      placeholderAdContent: body.placeholderAdContent !== undefined ? body.placeholderAdContent : (existing.placeholderAdContent || null),
+      placeholderAdDropZoneId: body.placeholderAdDropZoneId || existing.placeholderAdDropZoneId || 'dropzone-p-2',
+      placeholderAdOrder: body.placeholderAdOrder !== undefined ? body.placeholderAdOrder : (existing.placeholderAdOrder !== undefined ? existing.placeholderAdOrder : 2),
+      placeholderAdManualPlacement: body.placeholderAdManualPlacement !== undefined ? !!body.placeholderAdManualPlacement : (existing.placeholderAdManualPlacement || false),
+      // Multi-Ad Placements Array Persistence
+      adPlacements: Array.isArray(body.adPlacements) ? body.adPlacements : (existing.adPlacements || [])
+    } : {
+      placeholderAdEnabled: existing.placeholderAdEnabled || false,
+      placeholderAdPositionType: existing.placeholderAdPositionType || 'after_paragraph',
+      placeholderAdPositionValue: existing.placeholderAdPositionValue || '2',
+      placeholderAdAlignment: existing.placeholderAdAlignment || 'center',
+      placeholderAdLabel: existing.placeholderAdLabel || 'Advertisement',
+      placeholderAdContentType: existing.placeholderAdContentType || 'placeholder',
+      placeholderAdContent: existing.placeholderAdContent || null,
+      placeholderAdDropZoneId: existing.placeholderAdDropZoneId || 'dropzone-p-2',
+      placeholderAdOrder: existing.placeholderAdOrder !== undefined ? existing.placeholderAdOrder : 2,
+      placeholderAdManualPlacement: existing.placeholderAdManualPlacement || false,
+      adPlacements: existing.adPlacements || []
+    };
+
     db.articles[index] = {
-      ...db.articles[index],
+      ...existing,
       ...body,
+      ...adSettings,
       updatedAt: new Date().toISOString()
     };
 
