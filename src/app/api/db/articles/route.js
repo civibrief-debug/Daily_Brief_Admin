@@ -28,9 +28,25 @@ export async function POST(req) {
     const body = await req.json();
     const db = getDb();
 
+    // Mandatory Publish Validation: Article CANNOT be published without both Supertitle and Headline Title!
+    if (body.status === 'Published') {
+      const hasTitle = !!body.title?.trim();
+      const hasSupertitle = !!(body.kicker?.trim() || body.supertitle?.trim());
+      if (!hasTitle || !hasSupertitle) {
+        return NextResponse.json(
+          { success: false, error: 'Article cannot be published without both Supertitle (kicker) and Headline Title.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const supertitleVal = (body.kicker?.trim() || body.supertitle?.trim() || '');
+
     const newArticle = {
       id: body.id || `art-${Date.now()}`,
       title: body.title || 'Untitled Article',
+      kicker: supertitleVal,
+      supertitle: supertitleVal,
       category: body.category || 'Technology',
       author: body.author || 'Staff Reporter',
       authorId: body.authorId || null,
@@ -40,6 +56,14 @@ export async function POST(req) {
       summary: body.summary || '',
       content: body.content || '',
       imageUrl: body.imageUrl || 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
+      coverMediaType: body.coverMediaType || (body.videoUrl ? 'video' : 'image'),
+      videoUrl: body.videoUrl || '',
+      imageCaption: body.imageCaption || '',
+      coverWidth: body.coverWidth || '100%',
+      coverHeight: body.coverHeight || '340px',
+      coverAspectRatio: body.coverAspectRatio || null,
+      coverCropBox: body.coverCropBox || null,
+      coverCropStyle: body.coverCropStyle || null,
       featured: !!body.featured,
       // Persistent per-article placeholder ad placement configuration
       placeholderAdEnabled: body.userRole === 'super_admin' || body.isSuperAdmin ? !!body.placeholderAdEnabled : false,
@@ -52,6 +76,10 @@ export async function POST(req) {
       placeholderAdDropZoneId: body.placeholderAdDropZoneId || 'dropzone-p-2',
       placeholderAdOrder: body.placeholderAdOrder !== undefined ? body.placeholderAdOrder : 2,
       placeholderAdManualPlacement: !!body.placeholderAdManualPlacement,
+      placeholderAdCollageLayout: body.placeholderAdCollageLayout || 'grid_2x2',
+      placeholderAdCollageGap: body.placeholderAdCollageGap || '8px',
+      placeholderAdCollageRadius: body.placeholderAdCollageRadius || '12px',
+      placeholderAdCollageItems: Array.isArray(body.placeholderAdCollageItems) ? body.placeholderAdCollageItems : null,
       // Persistent Multi-Ad Placements Array
       adPlacements: (body.userRole === 'super_admin' || body.isSuperAdmin) && Array.isArray(body.adPlacements) 
         ? body.adPlacements 
@@ -67,6 +95,10 @@ export async function POST(req) {
             label: body.placeholderAdLabel || 'Advertisement',
             contentType: body.placeholderAdContentType || 'placeholder',
             content: body.placeholderAdContent || null,
+            collageLayout: body.placeholderAdCollageLayout || 'grid_2x2',
+            collageGap: body.placeholderAdCollageGap || '8px',
+            collageRadius: body.placeholderAdCollageRadius || '12px',
+            collageItems: body.placeholderAdCollageItems || null,
             dropZoneId: body.placeholderAdDropZoneId || 'dropzone-p-2'
           }] : []),
       comments: Array.isArray(body.comments) ? body.comments : [],

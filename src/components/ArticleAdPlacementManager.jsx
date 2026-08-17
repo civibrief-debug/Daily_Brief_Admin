@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   GripVertical, 
   Move, 
@@ -19,14 +19,108 @@ import {
   Code,
   Sparkles,
   ExternalLink,
-  Upload,
   Zap,
-  ChevronDown
+  ChevronDown,
+  Video,
+  Play,
+  LayoutGrid,
+  Layers,
+  Upload,
+  MousePointerClick
 } from 'lucide-react';
+
+export const DEFAULT_COLLAGE_ITEMS = [
+  {
+    id: 'tile-1',
+    url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=600&q=80',
+    mediaType: 'image',
+    title: 'Deep Reflection',
+    tag: 'Featured',
+    targetUrl: 'https://example.com/portrait'
+  },
+  {
+    id: 'tile-2',
+    url: 'https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&q=80',
+    mediaType: 'image',
+    title: 'Joyful Connection',
+    tag: 'Community',
+    targetUrl: 'https://example.com/community'
+  },
+  {
+    id: 'tile-3',
+    url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80',
+    mediaType: 'image',
+    title: 'Quiet Moments',
+    tag: 'Spotlight',
+    targetUrl: 'https://example.com/stories'
+  },
+  {
+    id: 'tile-4',
+    url: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80',
+    mediaType: 'image',
+    title: 'Collaborative Study',
+    tag: 'Education',
+    targetUrl: 'https://example.com/learn'
+  }
+];
 
 export const SAMPLE_AD_TEMPLATES = [
   {
-    id: 'sample-taichi-1',
+    id: 'sample-collage-community-0',
+    name: '🖼️ Youth, Culture & Community Stories (2x2 Quad Collage Ad)',
+    label: 'Community & Culture Showcase',
+    contentType: 'collage',
+    content: '',
+    collageLayout: 'grid_2x2',
+    collageGap: '8px',
+    collageRadius: '12px',
+    collageItems: DEFAULT_COLLAGE_ITEMS,
+    headline: 'Youth, Culture & Community Photo Story Collective',
+    description: 'Explore our multi-frame editorial visual narrative highlighting diverse human experiences.',
+    targetUrl: 'https://example.com/community-showcase',
+    ctaText: 'Explore Photo Series ↗',
+    alignment: 'center',
+    columnPosition: 'full',
+    widthMode: 'responsive_banner'
+  },
+  {
+    id: 'sample-video-ev-1',
+    name: '🎥 Apex Cyber-GT EV Commercial (Video Ad)',
+    label: 'Automotive Video Spotlight',
+    contentType: 'video',
+    content: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    headline: 'Experience the All-New Apex Cyber-GT Supercar',
+    description: 'Watch official track footage, aerodynamics test, and Level 3 autonomous highway cruise.',
+    targetUrl: 'https://apexmotors.com/cyber-gt',
+    ctaText: 'Book VIP Test Drive ↗',
+    alignment: 'center',
+    columnPosition: 'full',
+    widthMode: 'responsive_banner',
+    videoAutoplay: true,
+    videoLoop: true,
+    videoMuted: true,
+    videoControls: true
+  },
+  {
+    id: 'sample-video-gaming-2',
+    name: '🎮 Next-Gen Unreal Tech Trailer (Video Ad)',
+    label: 'Interactive Tech Partner',
+    contentType: 'video',
+    content: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    headline: 'Immersive Real-Time Cinematic Raytracing Engine',
+    description: 'Experience unprecedented visual fidelity with revolutionary real-time physics simulations.',
+    targetUrl: 'https://unrealengine.com/nextgen',
+    ctaText: 'Download Tech Demo ↗',
+    alignment: 'full_width',
+    columnPosition: 'full',
+    widthMode: 'leaderboard',
+    videoAutoplay: true,
+    videoLoop: true,
+    videoMuted: true,
+    videoControls: true
+  },
+  {
+    id: 'sample-taichi-3',
     name: '🧘 30-Day Tai Chi Plan (Leaderboard Banner)',
     label: 'Sponsored Health & Wellness',
     contentType: 'image',
@@ -40,7 +134,7 @@ export const SAMPLE_AD_TEMPLATES = [
     widthMode: 'leaderboard'
   },
   {
-    id: 'sample-cloud-2',
+    id: 'sample-cloud-4',
     name: '🚀 Quantum Cloud AI Clusters (Float Left)',
     label: 'Enterprise Partner',
     contentType: 'placeholder',
@@ -54,21 +148,7 @@ export const SAMPLE_AD_TEMPLATES = [
     widthMode: 'rectangle'
   },
   {
-    id: 'sample-ev-3',
-    name: '⚡ Apex Electric Gran Coupe EV (Center Banner)',
-    label: 'Automotive Showcase',
-    contentType: 'image',
-    content: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1200&q=80',
-    headline: 'Experience the All-New Apex Electric Gran Coupe',
-    description: '0-60 mph in 2.8s, 480-mile extended battery range, and Level 3 autonomous highway cruise.',
-    targetUrl: 'https://apexmotors.com/models/apex-gt',
-    ctaText: 'Book VIP Test Drive ↗',
-    alignment: 'center',
-    columnPosition: 'full',
-    widthMode: 'responsive_banner'
-  },
-  {
-    id: 'sample-finance-4',
+    id: 'sample-finance-5',
     name: '📊 Global Wealth & Sovereign Markets 2026 (Float Right)',
     label: 'Financial Insights',
     contentType: 'image',
@@ -80,20 +160,6 @@ export const SAMPLE_AD_TEMPLATES = [
     alignment: 'right',
     columnPosition: 'right_col',
     widthMode: 'rectangle'
-  },
-  {
-    id: 'sample-travel-5',
-    name: '✈️ Horizon Private Jet Expeditions (Full Width)',
-    label: 'Curated Partner',
-    contentType: 'placeholder',
-    content: '',
-    headline: 'Bespoke Private Aviation & Remote Island Escapes',
-    description: 'Experience seamless door-to-destination private charters with dedicated 24/7 concierge service.',
-    targetUrl: 'https://horizon-aviation.luxury/expeditions',
-    ctaText: 'Explore Itineraries ↗',
-    alignment: 'full_width',
-    columnPosition: 'full',
-    widthMode: 'leaderboard'
   }
 ];
 
@@ -107,7 +173,6 @@ export default function ArticleAdPlacementManager({
   const [dragOverZoneId, setDragOverZoneId] = useState(null);
   const [viewMode, setViewMode] = useState('canvas'); // 'canvas' | 'live_article' | 'mobile'
   const [showPresetDropdown, setShowPresetDropdown] = useState(false);
-  const fileInputRef = useRef(null);
 
   if (!isSuperAdmin) {
     return (
@@ -148,11 +213,15 @@ export default function ArticleAdPlacementManager({
         headline: formData.placeholderAdHeadline || 'Premium Partner Showcase',
         description: formData.placeholderAdDescription || 'Discover exclusive offers and services from our verified partners.',
         ctaText: formData.placeholderAdCtaText || 'Learn More ↗',
+        videoAutoplay: formData.placeholderAdVideoAutoplay ?? true,
+        videoLoop: formData.placeholderAdVideoLoop ?? true,
+        videoMuted: formData.placeholderAdVideoMuted ?? true,
+        videoControls: formData.placeholderAdVideoControls ?? true,
         dropZoneId: formData.placeholderAdDropZoneId || 'dropzone-p-2'
       }];
     }
     return [];
-  }, [formData.adPlacements, formData.placeholderAdEnabled, formData.placeholderAdPositionType, formData.placeholderAdPositionValue, formData.placeholderAdAlignment, formData.placeholderAdLabel, formData.placeholderAdContentType, formData.placeholderAdContent, formData.placeholderAdTargetUrl, formData.placeholderAdHeadline, formData.placeholderAdDescription, formData.placeholderAdCtaText, formData.placeholderAdDropZoneId]);
+  }, [formData.adPlacements, formData.placeholderAdEnabled, formData.placeholderAdPositionType, formData.placeholderAdPositionValue, formData.placeholderAdAlignment, formData.placeholderAdLabel, formData.placeholderAdContentType, formData.placeholderAdContent, formData.placeholderAdTargetUrl, formData.placeholderAdHeadline, formData.placeholderAdDescription, formData.placeholderAdCtaText, formData.placeholderAdVideoAutoplay, formData.placeholderAdVideoLoop, formData.placeholderAdVideoMuted, formData.placeholderAdVideoControls, formData.placeholderAdDropZoneId]);
 
   const hasAds = adPlacements.length > 0;
   const currentAd = adPlacements.find(a => a.id === activeAdId) || adPlacements[0] || null;
@@ -176,7 +245,15 @@ export default function ArticleAdPlacementManager({
       placeholderAdTargetUrl: primaryAd ? (primaryAd.targetUrl || primaryAd.linkUrl || '') : '',
       placeholderAdHeadline: primaryAd ? primaryAd.headline : '',
       placeholderAdDescription: primaryAd ? primaryAd.description : '',
-      placeholderAdCtaText: primaryAd ? primaryAd.ctaText : ''
+      placeholderAdCtaText: primaryAd ? primaryAd.ctaText : '',
+      placeholderAdVideoAutoplay: primaryAd ? primaryAd.videoAutoplay : true,
+      placeholderAdVideoLoop: primaryAd ? primaryAd.videoLoop : true,
+      placeholderAdVideoMuted: primaryAd ? primaryAd.videoMuted : true,
+      placeholderAdVideoControls: primaryAd ? primaryAd.videoControls : true,
+      placeholderAdCollageLayout: primaryAd ? primaryAd.collageLayout : 'grid_2x2',
+      placeholderAdCollageGap: primaryAd ? primaryAd.collageGap : '8px',
+      placeholderAdCollageRadius: primaryAd ? primaryAd.collageRadius : '12px',
+      placeholderAdCollageItems: primaryAd ? (primaryAd.collageItems || DEFAULT_COLLAGE_ITEMS) : DEFAULT_COLLAGE_ITEMS
     }));
   };
 
@@ -194,12 +271,20 @@ export default function ArticleAdPlacementManager({
       sortOrder: newIndex,
       widthMode: 'responsive_banner',
       label: `Advertisement #${newIndex}`,
-      contentType: 'placeholder',
+      contentType: 'collage',
       content: '',
+      collageLayout: 'grid_2x2',
+      collageGap: '8px',
+      collageRadius: '12px',
+      collageItems: DEFAULT_COLLAGE_ITEMS,
       targetUrl: 'https://example.com/sponsor',
-      headline: `Featured Sponsor Announcement #${newIndex}`,
-      description: 'Explore cutting-edge solutions and exclusive promotions tailored for readers.',
-      ctaText: 'Visit Partner ↗',
+      headline: `Multi-Frame Partner Showcase #${newIndex}`,
+      description: 'Explore our visual story series and featured collections.',
+      ctaText: 'Explore Series ↗',
+      videoAutoplay: true,
+      videoLoop: true,
+      videoMuted: true,
+      videoControls: true,
       dropZoneId: `dropzone-p-${nextTargetIdx}`
     };
 
@@ -208,7 +293,7 @@ export default function ArticleAdPlacementManager({
     setActiveAdId(newAd.id);
   };
 
-  // Insert a Preset Dummy Ad with Banner
+  // Insert a Preset Dummy Ad
   const handleInsertPresetAd = (template) => {
     setShowPresetDropdown(false);
     const newIndex = adPlacements.length + 1;
@@ -225,11 +310,19 @@ export default function ArticleAdPlacementManager({
       label: template.label || 'Advertisement',
       contentType: template.contentType || 'image',
       content: template.content || '',
+      collageLayout: template.collageLayout || 'grid_2x2',
+      collageGap: template.collageGap || '8px',
+      collageRadius: template.collageRadius || '12px',
+      collageItems: template.collageItems || DEFAULT_COLLAGE_ITEMS,
       targetUrl: template.targetUrl || 'https://example.com/sponsor',
       linkUrl: template.targetUrl || 'https://example.com/sponsor',
       headline: template.headline || 'Partner Showcase',
       description: template.description || 'Special offer for readers.',
       ctaText: template.ctaText || 'Learn More ↗',
+      videoAutoplay: template.videoAutoplay ?? true,
+      videoLoop: template.videoLoop ?? true,
+      videoMuted: template.videoMuted ?? true,
+      videoControls: template.videoControls ?? true,
       dropZoneId: `dropzone-p-${nextTargetIdx}`
     };
 
@@ -247,6 +340,47 @@ export default function ArticleAdPlacementManager({
     }
   };
 
+  // Tile Management Helpers for Collage Ads
+  const handleUpdateTile = (adId, tileIdx, updatedFields) => {
+    const ad = adPlacements.find(a => a.id === adId);
+    if (!ad) return;
+    const items = Array.isArray(ad.collageItems) && ad.collageItems.length > 0 
+      ? [...ad.collageItems] 
+      : [...DEFAULT_COLLAGE_ITEMS];
+    if (items[tileIdx]) {
+      items[tileIdx] = { ...items[tileIdx], ...updatedFields };
+    }
+    handleUpdateAdField(adId, 'collageItems', items);
+  };
+
+  const handleAddTile = (adId) => {
+    const ad = adPlacements.find(a => a.id === adId);
+    if (!ad) return;
+    const items = Array.isArray(ad.collageItems) && ad.collageItems.length > 0 
+      ? [...ad.collageItems] 
+      : [...DEFAULT_COLLAGE_ITEMS];
+    const newTile = {
+      id: `tile-${Date.now()}-${items.length + 1}`,
+      url: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=600&q=80',
+      mediaType: 'image',
+      title: `Story #${items.length + 1}`,
+      tag: 'Featured',
+      targetUrl: ''
+    };
+    handleUpdateAdField(adId, 'collageItems', [...items, newTile]);
+  };
+
+  const handleRemoveTile = (adId, tileIdx) => {
+    const ad = adPlacements.find(a => a.id === adId);
+    if (!ad) return;
+    const items = (Array.isArray(ad.collageItems) && ad.collageItems.length > 0 ? ad.collageItems : DEFAULT_COLLAGE_ITEMS).filter((_, i) => i !== tileIdx);
+    handleUpdateAdField(adId, 'collageItems', items);
+  };
+
+  const handleResetCollage = (adId) => {
+    handleUpdateAdField(adId, 'collageItems', DEFAULT_COLLAGE_ITEMS);
+  };
+
   // Update a single field on a specific ad
   const handleUpdateAdField = (adId, field, value) => {
     const updated = adPlacements.map(ad => {
@@ -262,20 +396,24 @@ export default function ArticleAdPlacementManager({
     updateAdPlacements(updated);
   };
 
-  // Handle Image Upload for Active Ad
-  const handleImageFileUpload = (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !currentAd) return;
+  // Helper to extract embed video URL (YouTube, Vimeo, etc.)
+  const parseVideoEmbedUrl = (rawUrl) => {
+    if (!rawUrl || typeof rawUrl !== 'string') return null;
+    const cleanUrl = rawUrl.trim();
 
-    const reader = new FileReader();
-    reader.onload = (uploadEvent) => {
-      const base64Url = uploadEvent.target?.result;
-      if (base64Url && typeof base64Url === 'string') {
-        handleUpdateAdField(currentAd.id, 'content', base64Url);
-        handleUpdateAdField(currentAd.id, 'contentType', 'image');
-      }
-    };
-    reader.readAsDataURL(file);
+    // YouTube
+    const ytMatch = cleanUrl.match(/(?:youtube(?:-nocookie)?\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?|shorts)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+    if (ytMatch && ytMatch[1]) {
+      return `https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&mute=1&loop=1&playlist=${ytMatch[1]}`;
+    }
+
+    // Vimeo
+    const vimeoMatch = cleanUrl.match(/(?:vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/[^\/]*\/videos\/|album\/\d+\/video\/|video\/|)(\d+))/i) || cleanUrl.match(/player\.vimeo\.com\/video\/(\d+)/i);
+    if (vimeoMatch && vimeoMatch[1]) {
+      return `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1&muted=1&loop=1`;
+    }
+
+    return null;
   };
 
   // Parse actual article HTML into structured preview segments
@@ -429,15 +567,6 @@ export default function ArticleAdPlacementManager({
       color: '#f8fafc',
       fontFamily: 'system-ui, -apple-system, sans-serif'
     }}>
-      {/* Hidden File Input for Image Banner Upload */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: 'none' }}
-        onChange={handleImageFileUpload}
-      />
-
       {/* Top Header: Multi-Ad Management & Action Bar */}
       <div style={{
         display: 'flex',
@@ -482,7 +611,7 @@ export default function ArticleAdPlacementManager({
               </span>
             </div>
             <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#94a3b8' }}>
-              Upload images, add hyperlinks & CTA banners, and drag placements across Left, Center, Right, and Full-Width zones.
+              Embed online video ads, images & interactive CTA banners with automatic click-through link redirection.
             </p>
           </div>
         </div>
@@ -571,7 +700,7 @@ export default function ArticleAdPlacementManager({
               }}
             >
               <Zap size={15} color="#38bdf8" />
-              <span>⚡ Insert Preset Dummy Ad</span>
+              <span>⚡ Insert Preset Ad</span>
               <ChevronDown size={14} />
             </button>
 
@@ -585,7 +714,7 @@ export default function ArticleAdPlacementManager({
                 border: '1.5px solid #38bdf8',
                 borderRadius: '10px',
                 padding: '8px',
-                width: '320px',
+                width: '340px',
                 boxShadow: '0 12px 36px rgba(0,0,0,0.8)',
                 zIndex: 9999,
                 display: 'flex',
@@ -593,7 +722,7 @@ export default function ArticleAdPlacementManager({
                 gap: '6px'
               }}>
                 <div style={{ fontSize: '11px', fontWeight: 800, color: '#38bdf8', padding: '4px 8px', textTransform: 'uppercase' }}>
-                  Choose Sample Banner Ad Template:
+                  Choose Online Embed Ad Preset:
                 </div>
                 {SAMPLE_AD_TEMPLATES.map(template => (
                   <button
@@ -664,6 +793,7 @@ export default function ArticleAdPlacementManager({
             </span>
             {adPlacements.map((ad, idx) => {
               const isSelected = (currentAd?.id === ad.id);
+              const formatIcon = ad.contentType === 'video' ? '🎥' : (ad.contentType === 'image' ? '🖼️' : '📢');
               return (
                 <button
                   key={ad.id}
@@ -690,13 +820,13 @@ export default function ArticleAdPlacementManager({
                     borderRadius: '50%',
                     background: ad.enabled ? '#34d399' : '#64748b'
                   }} />
-                  <span>Ad #{idx + 1}: {ad.alignment?.toUpperCase()} ({ad.dropZoneId?.replace('dropzone-', '') || 'P-2'})</span>
+                  <span>{formatIcon} Ad #{idx + 1}: {ad.alignment?.toUpperCase()} ({ad.dropZoneId?.replace('dropzone-', '') || 'P-2'})</span>
                 </button>
               );
             })}
           </div>
 
-          {/* ACTIVE AD CONFIGURATION STUDIO PANEL (Images, Hyperlinks, Banners & Redirects) */}
+          {/* ACTIVE AD CONFIGURATION STUDIO PANEL */}
           {currentAd && (
             <div style={{
               background: '#0b1120',
@@ -711,14 +841,16 @@ export default function ArticleAdPlacementManager({
             }}>
               {/* Row 1: Ad Type & Asset Selector */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '11px', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase' }}>
                     Ad Content Format:
                   </span>
-                  <div style={{ display: 'flex', gap: '4px' }}>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                     {[
+                      { key: 'collage', label: '🖼️ Multi-Media Collage', icon: LayoutGrid },
                       { key: 'placeholder', label: '📢 Interactive Banner Box', icon: Sparkles },
-                      { key: 'image', label: '🖼️ Custom Image Banner', icon: ImageIcon },
+                      { key: 'image', label: '🖼️ Embed Online Image', icon: ImageIcon },
+                      { key: 'video', label: '🎥 Embed Online Video', icon: Video },
                       { key: 'html', label: '💻 Custom HTML Embed', icon: Code }
                     ].map(typeItem => {
                       const Icon = typeItem.icon;
@@ -892,7 +1024,7 @@ export default function ArticleAdPlacementManager({
                     type="text"
                     value={currentAd.label || 'Advertisement'}
                     onChange={(e) => handleUpdateAdField(currentAd.id, 'label', e.target.value)}
-                    placeholder="e.g. Advertisement, Sponsored Partner"
+                    placeholder="e.g. Advertisement, Sponsored Video, Partner Spotlight"
                     style={{
                       width: '100%',
                       padding: '8px 10px',
@@ -907,16 +1039,16 @@ export default function ArticleAdPlacementManager({
                 </div>
               </div>
 
-              {/* Row 3: Hyperlink Redirect Destination URL */}
+              {/* Row 3: Destination Hyperlink (CRITICAL: When user clicks ad, redirects to this link) */}
               <div style={{
                 background: 'rgba(56, 189, 248, 0.08)',
-                border: '1px solid rgba(56, 189, 248, 0.3)',
+                border: '1.5px solid rgba(56, 189, 248, 0.4)',
                 borderRadius: '8px',
-                padding: '12px 14px'
+                padding: '14px'
               }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', marginBottom: '6px' }}>
-                  <LinkIcon size={13} />
-                  <span>Destination Hyperlink (Redirect URL when clicked):</span>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', marginBottom: '6px' }}>
+                  <LinkIcon size={14} />
+                  <span>Destination Hyperlink (Redirect URL when reader clicks ad):</span>
                 </label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input
@@ -926,16 +1058,16 @@ export default function ArticleAdPlacementManager({
                       handleUpdateAdField(currentAd.id, 'targetUrl', e.target.value);
                       handleUpdateAdField(currentAd.id, 'linkUrl', e.target.value);
                     }}
-                    placeholder="https://example.com/sponsor-offer (Clicks on banner will redirect here in new tab)"
+                    placeholder="https://sponsor.com/landing-page (Clicking anywhere on this ad redirects readers here)"
                     style={{
                       flex: 1,
-                      padding: '8px 12px',
+                      padding: '10px 14px',
                       background: '#0f172a',
-                      border: '1px solid rgba(56, 189, 248, 0.4)',
+                      border: '1px solid rgba(56, 189, 248, 0.5)',
                       borderRadius: '6px',
                       color: '#38bdf8',
-                      fontSize: '12px',
-                      fontWeight: 600,
+                      fontSize: '13px',
+                      fontWeight: 700,
                       outline: 'none'
                     }}
                   />
@@ -945,27 +1077,840 @@ export default function ArticleAdPlacementManager({
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{
-                        padding: '8px 12px',
+                        padding: '10px 16px',
                         background: 'rgba(56, 189, 248, 0.2)',
                         border: '1px solid rgba(56, 189, 248, 0.4)',
                         borderRadius: '6px',
                         color: '#38bdf8',
-                        fontSize: '11px',
-                        fontWeight: 700,
+                        fontSize: '12px',
+                        fontWeight: 800,
                         textDecoration: 'none',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '4px'
+                        gap: '6px'
                       }}
                     >
-                      <ExternalLink size={13} />
-                      <span>Test URL ↗</span>
+                      <ExternalLink size={14} />
+                      <span>Test Redirect ↗</span>
                     </a>
                   )}
                 </div>
               </div>
 
-              {/* Row 4: Custom Image Banner Upload & URL Options */}
+              {/* Row 4: EMBED ONLINE VIDEO AD */}
+              {currentAd.contentType === 'video' && (
+                <div style={{
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1.5px solid rgba(239, 68, 68, 0.35)',
+                  borderRadius: '10px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '14px'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Video size={16} color="#f87171" />
+                    <label style={{ fontSize: '12px', fontWeight: 800, color: '#f87171', textTransform: 'uppercase' }}>
+                      Embed Online Video (YouTube, Vimeo, or Direct MP4 / WebM URL):
+                    </label>
+                  </div>
+
+                  {/* Online Video URL Input */}
+                  <div>
+                    <input
+                      type="url"
+                      value={currentAd.content || ''}
+                      onChange={(e) => handleUpdateAdField(currentAd.id, 'content', e.target.value)}
+                      placeholder="Enter Online Video URL: e.g. https://www.youtube.com/watch?v=... or https://vimeo.com/... or https://.../video.mp4"
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        background: '#0f172a',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        borderRadius: '6px',
+                        color: '#ffffff',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+
+                  {/* Video Playback Options */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    flexWrap: 'wrap',
+                    background: 'rgba(0, 0, 0, 0.4)',
+                    padding: '10px 14px',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(255, 255, 255, 0.08)'
+                  }}>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>
+                      Playback Controls:
+                    </span>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#f8fafc', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={currentAd.videoAutoplay ?? true}
+                        onChange={(e) => handleUpdateAdField(currentAd.id, 'videoAutoplay', e.target.checked)}
+                        style={{ accentColor: '#ef4444' }}
+                      />
+                      <span>Autoplay Video</span>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#f8fafc', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={currentAd.videoMuted ?? true}
+                        onChange={(e) => handleUpdateAdField(currentAd.id, 'videoMuted', e.target.checked)}
+                        style={{ accentColor: '#ef4444' }}
+                      />
+                      <span>Muted by Default</span>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#f8fafc', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={currentAd.videoLoop ?? true}
+                        onChange={(e) => handleUpdateAdField(currentAd.id, 'videoLoop', e.target.checked)}
+                        style={{ accentColor: '#ef4444' }}
+                      />
+                      <span>Loop Video</span>
+                    </label>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#f8fafc', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={currentAd.videoControls ?? true}
+                        onChange={(e) => handleUpdateAdField(currentAd.id, 'videoControls', e.target.checked)}
+                        style={{ accentColor: '#ef4444' }}
+                      />
+                      <span>Show Controls</span>
+                    </label>
+                  </div>
+
+                  {/* Video Text & CTA Settings */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#f87171', textTransform: 'uppercase', marginBottom: '4px' }}>
+                        Video Headline / Title
+                      </label>
+                      <input
+                        type="text"
+                        value={currentAd.headline || ''}
+                        onChange={(e) => handleUpdateAdField(currentAd.id, 'headline', e.target.value)}
+                        placeholder="e.g. Watch the Official Product Debut"
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          background: '#0f172a',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          borderRadius: '6px',
+                          color: '#ffffff',
+                          fontSize: '12px',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#f87171', textTransform: 'uppercase', marginBottom: '4px' }}>
+                        Clickable CTA Button Text (Redirects on click)
+                      </label>
+                      <input
+                        type="text"
+                        value={currentAd.ctaText || ''}
+                        onChange={(e) => handleUpdateAdField(currentAd.id, 'ctaText', e.target.value)}
+                        placeholder="e.g. Visit Sponsor ↗, Explore Model, Watch Demo"
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          background: '#0f172a',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          borderRadius: '6px',
+                          color: '#ffffff',
+                          fontSize: '12px',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Live Video Preview in Studio Panel */}
+                  {currentAd.content && (
+                    <div style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)', position: 'relative', background: '#000', maxHeight: '280px' }}>
+                      {parseVideoEmbedUrl(currentAd.content) ? (
+                        <iframe
+                          src={parseVideoEmbedUrl(currentAd.content)}
+                          title="Ad Video Preview"
+                          style={{ width: '100%', height: '220px', border: 'none', display: 'block' }}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      ) : (
+                        <video
+                          src={currentAd.content}
+                          controls={currentAd.videoControls ?? true}
+                          autoPlay={currentAd.videoAutoplay ?? true}
+                          loop={currentAd.videoLoop ?? true}
+                          muted={currentAd.videoMuted ?? true}
+                          playsInline
+                          style={{ width: '100%', maxHeight: '220px', objectFit: 'contain', display: 'block' }}
+                        />
+                      )}
+                      <span style={{ position: 'absolute', bottom: '6px', right: '6px', background: 'rgba(0,0,0,0.85)', color: '#f87171', fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(239,68,68,0.4)' }}>
+                        🎥 Live Online Video Embed Preview
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Row 4.5: MULTI-MEDIA COLLAGE AD STUDIO (2x2 Quad Grid, 1x2, 1+2, etc.) */}
+              {currentAd.contentType === 'collage' && (
+                <div style={{
+                  background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(99, 102, 241, 0.08) 100%)',
+                  border: '1.5px solid rgba(168, 85, 247, 0.35)',
+                  borderRadius: '10px',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '16px'
+                }}>
+                  {/* Collage Layout Preset Buttons */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <LayoutGrid size={14} color="#c084fc" />
+                        <label style={{ fontSize: '11px', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase' }}>
+                          Collage Grid Layout Pattern:
+                        </label>
+                      </div>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                        Matching Quad (2x2) & Dynamic Multi-Frame Layouts
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {[
+                        { key: 'grid_2x2', label: '⊞ 2x2 Quad Grid (4 Tiles)', desc: '2 rows x 2 columns (Classic Quad Collage)' },
+                        { key: 'grid_1x2', label: '▥ 2-Grid Split (2 Tiles)', desc: '2 equal vertical columns' },
+                        { key: 'grid_1_plus_2', label: '◫ 1+2 Featured (3 Tiles)', desc: '1 large hero on left + 2 stacked' },
+                        { key: 'grid_3_cols', label: '☵ 3 Columns (3 Tiles)', desc: '3 equal column cards' },
+                        { key: 'grid_1_plus_3', label: '⬚ 1+3 Banner (4 Tiles)', desc: '1 wide top header + 3 bottom cards' }
+                      ].map(layoutOpt => {
+                        const isLayoutActive = (currentAd.collageLayout || 'grid_2x2') === layoutOpt.key;
+                        return (
+                          <button
+                            key={layoutOpt.key}
+                            type="button"
+                            onClick={() => handleUpdateAdField(currentAd.id, 'collageLayout', layoutOpt.key)}
+                            style={{
+                              padding: '6px 12px',
+                              background: isLayoutActive ? '#7c3aed' : 'rgba(255, 255, 255, 0.05)',
+                              border: isLayoutActive ? '1px solid #a855f7' : '1px solid rgba(255, 255, 255, 0.1)',
+                              borderRadius: '6px',
+                              color: isLayoutActive ? '#ffffff' : '#94a3b8',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '5px'
+                            }}
+                            title={layoutOpt.desc}
+                          >
+                            <span>{layoutOpt.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Collage Styling Parameters (Gap & Radius) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: '8px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 700, color: '#e2e8f0', textTransform: 'uppercase', marginBottom: '4px' }}>
+                        Grid Gap Between Tiles:
+                      </label>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        {['4px', '8px', '12px', '16px'].map(gap => (
+                          <button
+                            key={gap}
+                            type="button"
+                            onClick={() => handleUpdateAdField(currentAd.id, 'collageGap', gap)}
+                            style={{
+                              flex: 1,
+                              padding: '4px 6px',
+                              background: (currentAd.collageGap || '8px') === gap ? '#a855f7' : 'rgba(255, 255, 255, 0.06)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '4px',
+                              color: '#fff',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {gap}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '10.5px', fontWeight: 700, color: '#e2e8f0', textTransform: 'uppercase', marginBottom: '4px' }}>
+                        Outer & Tile Corner Radius:
+                      </label>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        {['4px', '8px', '12px', '16px', '20px'].map(radius => (
+                          <button
+                            key={radius}
+                            type="button"
+                            onClick={() => handleUpdateAdField(currentAd.id, 'collageRadius', radius)}
+                            style={{
+                              flex: 1,
+                              padding: '4px 6px',
+                              background: (currentAd.collageRadius || '12px') === radius ? '#a855f7' : 'rgba(255, 255, 255, 0.06)',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '4px',
+                              color: '#fff',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {radius}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Collage Headline & CTA */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase', marginBottom: '4px' }}>
+                        Collage Headline Title:
+                      </label>
+                      <input
+                        type="text"
+                        value={currentAd.headline || ''}
+                        onChange={(e) => handleUpdateAdField(currentAd.id, 'headline', e.target.value)}
+                        placeholder="e.g. Youth & Community Stories Collective"
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          background: '#0f172a',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          borderRadius: '6px',
+                          color: '#ffffff',
+                          fontSize: '12px',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase', marginBottom: '4px' }}>
+                        Call-to-Action (CTA Button):
+                      </label>
+                      <input
+                        type="text"
+                        value={currentAd.ctaText || ''}
+                        onChange={(e) => handleUpdateAdField(currentAd.id, 'ctaText', e.target.value)}
+                        placeholder="e.g. Explore Photo Series ↗"
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          background: '#0f172a',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          borderRadius: '6px',
+                          color: '#ffffff',
+                          fontSize: '12px',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase', marginBottom: '4px' }}>
+                        Description / Story Subtitle:
+                      </label>
+                      <input
+                        type="text"
+                        value={currentAd.description || ''}
+                        onChange={(e) => handleUpdateAdField(currentAd.id, 'description', e.target.value)}
+                        placeholder="e.g. Visual stories of human resilience, connections, and community moments."
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          background: '#0f172a',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          borderRadius: '6px',
+                          color: '#ffffff',
+                          fontSize: '12px',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Collage Tiles List & Local File / URL Uploader */}
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Layers size={14} color="#38bdf8" />
+                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#f8fafc', textTransform: 'uppercase' }}>
+                          Collage Media Tiles ({(currentAd.collageItems || DEFAULT_COLLAGE_ITEMS).length} Slots)
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleResetCollage(currentAd.id)}
+                          style={{
+                            padding: '4px 10px',
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            border: '1px solid rgba(255, 255, 255, 0.15)',
+                            borderRadius: '6px',
+                            color: '#cbd5e1',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ⚡ Load 4-Photo Sample Grid
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleAddTile(currentAd.id)}
+                          style={{
+                            padding: '4px 12px',
+                            background: '#0284c7',
+                            border: 'none',
+                            borderRadius: '6px',
+                            color: '#ffffff',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <Plus size={12} />
+                          <span>+ Add Tile Slot</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' }}>
+                      {(Array.isArray(currentAd.collageItems) && currentAd.collageItems.length > 0 ? currentAd.collageItems : DEFAULT_COLLAGE_ITEMS).map((tile, tileIdx) => {
+                        const isVideo = tile.mediaType === 'video' || /\.(mp4|webm|ogg)(\?.*)?$/i.test(tile.url || '');
+                        const tilePosLabel = (currentAd.collageLayout === 'grid_2x2' || !currentAd.collageLayout)
+                          ? (tileIdx === 0 ? 'Top-Left' : (tileIdx === 1 ? 'Top-Right' : (tileIdx === 2 ? 'Bottom-Left' : (tileIdx === 3 ? 'Bottom-Right' : `#${tileIdx + 1}`))))
+                          : `#${tileIdx + 1}`;
+
+                        return (
+                          <div
+                            key={tile.id || tileIdx}
+                            style={{
+                              background: '#090d16',
+                              border: '1px solid rgba(255, 255, 255, 0.12)',
+                              borderRadius: '8px',
+                              padding: '10px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '8px'
+                            }}
+                          >
+                            {/* Slot Header */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                              <span style={{ fontSize: '11px', fontWeight: 800, color: '#38bdf8' }}>
+                                🖼️ Slot {tileIdx + 1} ({tilePosLabel})
+                              </span>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '10px', color: '#94a3b8', background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '4px' }}>
+                                  {isVideo ? '🎥 Video' : '🖼️ Image'}
+                                </span>
+                                {(currentAd.collageItems?.length || DEFAULT_COLLAGE_ITEMS.length) > 2 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveTile(currentAd.id, tileIdx)}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      color: '#ef4444',
+                                      cursor: 'pointer',
+                                      padding: '2px'
+                                    }}
+                                    title="Delete this tile"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Media Preview & Device File Upload */}
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <div style={{
+                                width: '64px',
+                                height: '64px',
+                                borderRadius: '6px',
+                                overflow: 'hidden',
+                                background: '#020617',
+                                flexShrink: 0,
+                                border: '1px solid rgba(255, 255, 255, 0.15)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}>
+                                {isVideo ? (
+                                  <video src={tile.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted autoPlay loop playsInline />
+                                ) : (
+                                  <img
+                                    src={tile.url || 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=600&q=80'}
+                                    alt={`Tile ${tileIdx + 1}`}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                    onError={(e) => {
+                                      e.currentTarget.src = 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=600&q=80';
+                                    }}
+                                  />
+                                )}
+                              </div>
+
+                              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <input
+                                  type="file"
+                                  id={`ad-tile-upload-${currentAd.id}-${tileIdx}`}
+                                  accept="image/*,video/*"
+                                  style={{ display: 'none' }}
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    const isVid = file.type.startsWith('video');
+                                    if (isVid) {
+                                      const reader = new FileReader();
+                                      reader.onload = (ev) => {
+                                        const dataUrl = ev.target?.result;
+                                        if (dataUrl) {
+                                          handleUpdateTile(currentAd.id, tileIdx, { url: dataUrl, mediaType: 'video' });
+                                        }
+                                      };
+                                      reader.readAsDataURL(file);
+                                    } else {
+                                      const reader = new FileReader();
+                                      reader.onload = (ev) => {
+                                        const raw = ev.target?.result;
+                                        if (!raw) return;
+                                        const img = new Image();
+                                        img.onload = () => {
+                                          const canvas = document.createElement('canvas');
+                                          const MAX_WIDTH = 1200;
+                                          let width = img.width;
+                                          let height = img.height;
+                                          if (width > MAX_WIDTH) {
+                                            height = Math.round(height * (MAX_WIDTH / width));
+                                            width = MAX_WIDTH;
+                                          }
+                                          canvas.width = width;
+                                          canvas.height = height;
+                                          const ctx = canvas.getContext('2d');
+                                          ctx.drawImage(img, 0, 0, width, height);
+                                          const compressed = canvas.toDataURL('image/jpeg', 0.85);
+                                          handleUpdateTile(currentAd.id, tileIdx, { url: compressed, mediaType: 'image' });
+                                        };
+                                        img.src = raw;
+                                      };
+                                      reader.readAsDataURL(file);
+                                    }
+                                  }}
+                                />
+
+                                <button
+                                  type="button"
+                                  onClick={() => document.getElementById(`ad-tile-upload-${currentAd.id}-${tileIdx}`)?.click()}
+                                  style={{
+                                    padding: '4px 8px',
+                                    background: 'rgba(56, 189, 248, 0.15)',
+                                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                                    borderRadius: '4px',
+                                    color: '#38bdf8',
+                                    fontSize: '10.5px',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '4px'
+                                  }}
+                                >
+                                  <Upload size={11} />
+                                  <span>Upload from Computer</span>
+                                </button>
+
+                                <input
+                                  type="url"
+                                  value={tile.url || ''}
+                                  onChange={(e) => handleUpdateTile(currentAd.id, tileIdx, { url: e.target.value })}
+                                  placeholder="OR paste Image/Video URL"
+                                  style={{
+                                    width: '100%',
+                                    padding: '4px 8px',
+                                    background: '#020617',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                                    borderRadius: '4px',
+                                    color: '#ffffff',
+                                    fontSize: '11px',
+                                    outline: 'none',
+                                    boxSizing: 'border-box'
+                                  }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Caption & Target URL Fields */}
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                              <input
+                                type="text"
+                                value={tile.title || ''}
+                                onChange={(e) => handleUpdateTile(currentAd.id, tileIdx, { title: e.target.value })}
+                                placeholder="Caption / Title"
+                                style={{
+                                  padding: '4px 6px',
+                                  background: '#020617',
+                                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                                  borderRadius: '4px',
+                                  color: '#cbd5e1',
+                                  fontSize: '11px',
+                                  outline: 'none'
+                                }}
+                              />
+                              <input
+                                type="text"
+                                value={tile.tag || ''}
+                                onChange={(e) => handleUpdateTile(currentAd.id, tileIdx, { tag: e.target.value })}
+                                placeholder="Tag (e.g. Featured)"
+                                style={{
+                                  padding: '4px 6px',
+                                  background: '#020617',
+                                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                                  borderRadius: '4px',
+                                  color: '#cbd5e1',
+                                  fontSize: '11px',
+                                  outline: 'none'
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Live Interactive Collage Preview in Studio (Auto-Resizes with Alignment like Canva Card) */}
+                  {(() => {
+                    const alignVal = currentAd.alignment || 'center';
+                    const isCompactLayout = (alignVal === 'left' || alignVal === 'right');
+                    const wrapperStyle = {
+                      maxWidth: isCompactLayout ? '340px' : (alignVal === 'center' ? '540px' : '100%'),
+                      margin: alignVal === 'left' ? '0 auto 0 0' : (alignVal === 'right' ? '0 0 0 auto' : '0 auto'),
+                      width: '100%',
+                      background: '#040711',
+                      border: '1.5px solid rgba(168, 85, 247, 0.4)',
+                      borderRadius: '12px',
+                      padding: isCompactLayout ? '12px' : '16px',
+                      boxShadow: '0 8px 30px rgba(0, 0, 0, 0.6)',
+                      transition: 'all 0.25s ease'
+                    };
+
+                    return (
+                      <div style={{ background: '#020617', padding: '14px', borderRadius: '10px', border: '1px solid rgba(168, 85, 247, 0.25)' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase', marginBottom: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <LayoutGrid size={13} color="#a855f7" />
+                            <span>Live Alignment & Resizing Preview</span>
+                          </span>
+                          <span style={{
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            background: isCompactLayout ? 'rgba(56, 189, 248, 0.15)' : 'rgba(168, 85, 247, 0.15)',
+                            color: isCompactLayout ? '#38bdf8' : '#c084fc',
+                            border: '1px solid rgba(255,255,255,0.1)'
+                          }}>
+                            📍 {alignVal.toUpperCase()} ALIGNED ({isCompactLayout ? 'Auto-Resized 340px Compact Card' : (alignVal === 'center' ? 'Centered 540px' : '100% Full Width')})
+                          </span>
+                        </div>
+
+                        {/* Centered/Left/Right Resized Card Container */}
+                        <div style={wrapperStyle}>
+                          {/* 1. Header Disclosure Bar */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', paddingBottom: '4px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                            <div style={{ fontSize: '9.5px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <LayoutGrid size={11} color="#a855f7" />
+                              <span>{currentAd.label || 'Sponsored Showcase'}</span>
+                            </div>
+                            <span style={{ fontSize: '9px', color: '#64748b', fontWeight: 700 }}>SPONSOR</span>
+                          </div>
+
+                          {/* 2. Proportional Collage Grid (Square 1:1 on 2x2) */}
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: (currentAd.collageLayout === 'grid_1x2' || currentAd.collageLayout === 'grid_2x2' || !currentAd.collageLayout) 
+                                ? 'repeat(2, 1fr)' 
+                                : (currentAd.collageLayout === 'grid_3_cols' ? 'repeat(3, 1fr)' : (currentAd.collageLayout === 'grid_1_plus_2' ? '1.2fr 0.8fr' : 'repeat(3, 1fr)')),
+                              gridTemplateRows: (currentAd.collageLayout === 'grid_2x2' || !currentAd.collageLayout)
+                                ? 'repeat(2, 1fr)'
+                                : (currentAd.collageLayout === 'grid_1_plus_2' ? 'repeat(2, 1fr)' : (currentAd.collageLayout === 'grid_1_plus_3' ? '1.2fr 1fr' : '1fr')),
+                              gap: currentAd.collageGap || '6px',
+                              borderRadius: currentAd.collageRadius || '10px',
+                              overflow: 'hidden',
+                              background: 'rgba(0, 0, 0, 0.5)',
+                              aspectRatio: currentAd.collageLayout === 'grid_3_cols' ? '16 / 7' : (currentAd.collageLayout === 'grid_1x2' ? '16 / 9' : '1 / 1'),
+                              width: '100%',
+                              maxHeight: isCompactLayout ? '320px' : '420px',
+                              border: '1px solid rgba(255, 255, 255, 0.15)'
+                            }}
+                          >
+                            {(Array.isArray(currentAd.collageItems) && currentAd.collageItems.length > 0 ? currentAd.collageItems : DEFAULT_COLLAGE_ITEMS).map((item, idx) => {
+                              const itemSpanStyle = {};
+                              if (currentAd.collageLayout === 'grid_1_plus_2' && idx === 0) {
+                                itemSpanStyle.gridRow = '1 / 3';
+                              } else if (currentAd.collageLayout === 'grid_1_plus_3' && idx === 0) {
+                                itemSpanStyle.gridColumn = '1 / 4';
+                              }
+
+                              const isVideo = item.mediaType === 'video' || /\.(mp4|webm|ogg)(\?.*)?$/i.test(item.url || '');
+
+                              return (
+                                <div
+                                  key={item.id || idx}
+                                  style={{
+                                    position: 'relative',
+                                    overflow: 'hidden',
+                                    borderRadius: '4px',
+                                    background: '#090d16',
+                                    ...itemSpanStyle
+                                  }}
+                                >
+                                  {isVideo ? (
+                                    <video src={item.url} autoPlay muted loop playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                                  ) : (
+                                    <img
+                                      src={item.url || 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=600&q=80'}
+                                      alt={item.title || `Frame ${idx + 1}`}
+                                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                    />
+                                  )}
+
+                                  {(item.tag || item.title) && (
+                                    <div style={{
+                                      position: 'absolute',
+                                      bottom: '4px',
+                                      left: '4px',
+                                      background: 'rgba(0, 0, 0, 0.75)',
+                                      color: '#f8fafc',
+                                      fontSize: isCompactLayout ? '8.5px' : '9.5px',
+                                      fontWeight: 700,
+                                      padding: '1px 6px',
+                                      borderRadius: '3px',
+                                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                                      maxWidth: '85%',
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis'
+                                    }}>
+                                      {item.tag || item.title}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* 3. Info & Full-Width CTA Section (Canva Style when Compact) */}
+                          {isCompactLayout ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '6px', marginTop: '10px' }}>
+                              <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff', lineHeight: 1.3 }}>
+                                {currentAd.headline || 'Featured Story Narrative'}
+                              </div>
+                              {currentAd.description && (
+                                <div style={{ fontSize: '11px', color: '#94a3b8', lineHeight: 1.35 }}>
+                                  {currentAd.description}
+                                </div>
+                              )}
+                              <div style={{
+                                width: '100%',
+                                marginTop: '4px',
+                                background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                                color: '#ffffff',
+                                padding: '8px 14px',
+                                borderRadius: '8px',
+                                fontSize: '12px',
+                                fontWeight: 800,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '5px',
+                                boxShadow: '0 3px 12px rgba(168, 85, 247, 0.4)'
+                              }}>
+                                <MousePointerClick size={12} />
+                                <span>{currentAd.ctaText || 'Get Started Free ↗'}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginTop: '10px' }}>
+                              <div>
+                                <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
+                                  {currentAd.headline || 'Featured Story Narrative'}
+                                </div>
+                                {currentAd.description && (
+                                  <div style={{ fontSize: '11px', color: '#94a3b8', maxWidth: '440px', lineHeight: 1.35 }}>
+                                    {currentAd.description}
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{
+                                background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                                color: '#ffffff',
+                                padding: '6px 14px',
+                                borderRadius: '6px',
+                                fontSize: '11px',
+                                fontWeight: 800,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                boxShadow: '0 2px 8px rgba(168, 85, 247, 0.35)'
+                              }}>
+                                <MousePointerClick size={12} />
+                                <span>{currentAd.ctaText || 'Explore Showcase ↗'}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Row 5: EMBED ONLINE IMAGE BANNER */}
               {currentAd.contentType === 'image' && (
                 <div style={{
                   background: 'rgba(168, 85, 247, 0.08)',
@@ -973,32 +1918,11 @@ export default function ArticleAdPlacementManager({
                   borderRadius: '8px',
                   padding: '14px'
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase' }}>
-                      <ImageIcon size={14} />
-                      <span>Banner Image Asset (Upload or Enter URL):</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                    <ImageIcon size={14} color="#c084fc" />
+                    <label style={{ fontSize: '11px', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase' }}>
+                      Embed Online Image Banner (Direct Image URL):
                     </label>
-
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      style={{
-                        background: '#7c3aed',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '6px',
-                        padding: '5px 12px',
-                        fontSize: '11px',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                    >
-                      <Upload size={13} />
-                      <span>Upload Banner Image from Device</span>
-                    </button>
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
@@ -1006,10 +1930,10 @@ export default function ArticleAdPlacementManager({
                       type="url"
                       value={currentAd.content || ''}
                       onChange={(e) => handleUpdateAdField(currentAd.id, 'content', e.target.value)}
-                      placeholder="Paste Image URL: https://images.unsplash.com/... or upload banner graphic"
+                      placeholder="Paste Online Image URL: e.g. https://images.unsplash.com/... or https://sponsor.com/banner.png"
                       style={{
                         flex: 1,
-                        padding: '8px 12px',
+                        padding: '10px 14px',
                         background: '#0f172a',
                         border: '1px solid rgba(255, 255, 255, 0.15)',
                         borderRadius: '6px',
@@ -1027,15 +1951,15 @@ export default function ArticleAdPlacementManager({
                         alt={currentAd.label || 'Ad Banner'}
                         style={{ width: '100%', height: '140px', objectFit: 'cover', display: 'block' }}
                       />
-                      <span style={{ position: 'absolute', bottom: '6px', right: '6px', background: 'rgba(0,0,0,0.7)', color: '#fff', fontSize: '10px', padding: '2px 6px', borderRadius: '4px' }}>
-                        Image Banner Preview
+                      <span style={{ position: 'absolute', bottom: '6px', right: '6px', background: 'rgba(0,0,0,0.85)', color: '#c084fc', fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '4px' }}>
+                        Online Image Embed Preview (Click redirects to destination URL)
                       </span>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* Row 5: Interactive Banner Box Fields (Headline, Subtitle, CTA) */}
+              {/* Row 6: Interactive Banner Box Fields */}
               {currentAd.contentType === 'placeholder' && (
                 <div style={{
                   background: 'rgba(16, 185, 129, 0.06)',
@@ -1114,7 +2038,7 @@ export default function ArticleAdPlacementManager({
                 </div>
               )}
 
-              {/* Row 6: Custom HTML Embed Code */}
+              {/* Row 7: Custom HTML Embed Code */}
               {currentAd.contentType === 'html' && (
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase', marginBottom: '6px' }}>
@@ -1176,7 +2100,7 @@ export default function ArticleAdPlacementManager({
               type="button"
               onClick={() => handleInsertPresetAd(SAMPLE_AD_TEMPLATES[0])}
               style={{
-                background: 'linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%)',
+                background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
                 color: '#fff',
                 border: 'none',
                 borderRadius: '8px',
@@ -1189,8 +2113,8 @@ export default function ArticleAdPlacementManager({
                 gap: '6px'
               }}
             >
-              <Zap size={15} />
-              <span>⚡ Insert Sample Tai Chi Banner Ad</span>
+              <Video size={15} />
+              <span>⚡ Insert Sample Video Ad</span>
             </button>
           </div>
         </div>
@@ -1230,7 +2154,7 @@ export default function ArticleAdPlacementManager({
             {/* Render Dropzone 0 (Intro) */}
             {renderDropZoneSlot('dropzone-intro', dropZones[0])}
 
-            {/* Render Content Stream with Interleaved Ads & Dropzones (Matching Image 1 Structure) */}
+            {/* Render Content Stream with Interleaved Ads & Dropzones */}
             {segments.map((seg, segIdx) => {
               const correspondingZone = dropZones[segIdx + 1];
               const zoneId = correspondingZone ? correspondingZone.id : `dropzone-p-${segIdx}`;
@@ -1277,7 +2201,7 @@ export default function ArticleAdPlacementManager({
                     )}
                   </div>
 
-                  {/* Side-by-Side Multi-Column Newspaper Layout (Matching Image 1 EXACTLY when Left/Right Ad is present) */}
+                  {/* Side-by-Side Multi-Column Newspaper Layout */}
                   {(leftAd || rightAd) ? (
                     <div style={{
                       display: 'grid',
@@ -1396,7 +2320,7 @@ export default function ArticleAdPlacementManager({
               👁️ Super Admin Live Article Preview with Active Ad Placements ({adPlacements.filter(a => a.enabled).length} Ads)
             </span>
             <span style={{ fontSize: '11px', color: '#cbd5e1' }}>
-              All ads are rendered in their exact saved positions with clickable destination links
+              All embedded ads redirect readers to their destination link upon clicking
             </span>
           </div>
 
@@ -1446,16 +2370,29 @@ export default function ArticleAdPlacementManager({
     </div>
   );
 
-  // Sub-renderer: Draggable Ad Placement Card (Custom Image Banner, CTA Banner, or HTML)
+  // Sub-renderer: Draggable Ad Placement Card
   function renderDraggableAdCard(ad) {
+    const isCompact = (ad.alignment === 'left' || ad.alignment === 'right');
     let widthStyle = '100%';
-    if (ad.alignment === 'left' || ad.alignment === 'right') {
-      widthStyle = '100%';
+    let maxWidthStyle = '100%';
+    let marginStyle = '16px auto';
+
+    if (ad.alignment === 'left') {
+      widthStyle = '46%';
+      maxWidthStyle = '340px';
+      marginStyle = '12px auto 18px 0';
+    } else if (ad.alignment === 'right') {
+      widthStyle = '46%';
+      maxWidthStyle = '340px';
+      marginStyle = '12px 0 18px auto';
     } else if (ad.alignment === 'center') {
-      widthStyle = '92%';
+      widthStyle = '88%';
+      maxWidthStyle = '540px';
+      marginStyle = '16px auto';
     }
 
     const targetLink = ad.targetUrl || ad.linkUrl || '';
+    const videoEmbed = parseVideoEmbedUrl(ad.content);
 
     return (
       <div
@@ -1466,11 +2403,12 @@ export default function ArticleAdPlacementManager({
         onClick={() => setActiveAdId(ad.id)}
         style={{
           width: widthStyle,
-          margin: '12px auto',
+          maxWidth: maxWidthStyle,
+          margin: marginStyle,
           background: 'linear-gradient(135deg, rgba(88, 28, 135, 0.3) 0%, rgba(15, 23, 42, 0.96) 100%)',
           border: '2px solid #a855f7',
-          borderRadius: '10px',
-          padding: '16px 20px',
+          borderRadius: '12px',
+          padding: isCompact ? '12px 14px' : '16px 20px',
           boxShadow: '0 0 24px rgba(168, 85, 247, 0.35)',
           cursor: 'grab',
           userSelect: 'none',
@@ -1486,41 +2424,255 @@ export default function ArticleAdPlacementManager({
           justifyContent: 'space-between',
           borderBottom: '1px solid rgba(168, 85, 247, 0.3)',
           paddingBottom: '8px',
-          marginBottom: '12px'
+          marginBottom: '10px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <GripVertical size={16} color="#c084fc" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <GripVertical size={14} color="#c084fc" />
             <span style={{
-              fontSize: '12px',
+              fontSize: '11px',
               fontWeight: 800,
               color: '#c084fc',
               textTransform: 'uppercase',
               letterSpacing: '0.8px'
             }}>
-              📢 {ad.label || 'ADVERTISEMENT'} (SAVED POSITION)
+              📢 {ad.label || 'ADVERTISEMENT'}
             </span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{
-              background: '#8b5cf6',
-              color: '#ffffff',
-              padding: '3px 10px',
+              background: isCompact ? '#38bdf8' : '#8b5cf6',
+              color: isCompact ? '#000000' : '#ffffff',
+              padding: '2px 8px',
               borderRadius: '4px',
-              fontSize: '10px',
+              fontSize: '9.5px',
               fontWeight: 800,
               letterSpacing: '0.5px'
             }}>
               ALIGN: {ad.alignment?.toUpperCase() || 'CENTER'}
             </span>
-            <span style={{ fontSize: '11px', color: '#cbd5e1' }}>
-              ⠿ Drag to move
+            <span style={{ fontSize: '10px', color: '#cbd5e1' }}>
+              ⠿ Move
             </span>
           </div>
         </div>
 
-        {/* Dynamic Ad Content Display: Image / Custom Banner / HTML */}
-        {ad.contentType === 'image' && ad.content ? (
+        {/* 0. MULTI-MEDIA COLLAGE AD FORMAT (2x2 Quad Grid, 1x2, 1+2, etc.) */}
+        {ad.contentType === 'collage' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: (ad.collageLayout === 'grid_1x2' || ad.collageLayout === 'grid_2x2' || !ad.collageLayout) 
+                  ? 'repeat(2, 1fr)' 
+                  : (ad.collageLayout === 'grid_3_cols' ? 'repeat(3, 1fr)' : (ad.collageLayout === 'grid_1_plus_2' ? '1.2fr 0.8fr' : 'repeat(3, 1fr)')),
+                gridTemplateRows: (ad.collageLayout === 'grid_2x2' || !ad.collageLayout)
+                  ? 'repeat(2, 1fr)'
+                  : (ad.collageLayout === 'grid_1_plus_2' ? 'repeat(2, 1fr)' : (ad.collageLayout === 'grid_1_plus_3' ? '1.2fr 1fr' : '1fr')),
+                gap: ad.collageGap || '6px',
+                borderRadius: ad.collageRadius || '10px',
+                overflow: 'hidden',
+                background: 'rgba(0, 0, 0, 0.4)',
+                aspectRatio: ad.collageLayout === 'grid_3_cols' ? '16 / 7' : (ad.collageLayout === 'grid_1x2' ? '16 / 9' : '1 / 1'),
+                width: '100%',
+                maxHeight: isCompact ? '320px' : '420px'
+              }}
+            >
+              {(Array.isArray(ad.collageItems) && ad.collageItems.length > 0 ? ad.collageItems : DEFAULT_COLLAGE_ITEMS).map((item, idx) => {
+                const itemSpanStyle = {};
+                if (ad.collageLayout === 'grid_1_plus_2' && idx === 0) {
+                  itemSpanStyle.gridRow = '1 / 3';
+                } else if (ad.collageLayout === 'grid_1_plus_3' && idx === 0) {
+                  itemSpanStyle.gridColumn = '1 / 4';
+                }
+
+                const isVideo = item.mediaType === 'video' || /\.(mp4|webm|ogg)(\?.*)?$/i.test(item.url || '');
+
+                return (
+                  <div
+                    key={item.id || idx}
+                    style={{
+                      position: 'relative',
+                      overflow: 'hidden',
+                      borderRadius: '4px',
+                      background: '#020617',
+                      ...itemSpanStyle
+                    }}
+                  >
+                    {isVideo ? (
+                      <video src={item.url} autoPlay muted loop playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    ) : (
+                      <img
+                        src={item.url || 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=600&q=80'}
+                        alt={item.title || `Tile ${idx + 1}`}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                    )}
+
+                    {(item.tag || item.title) && (
+                      <div style={{
+                        position: 'absolute',
+                        bottom: '4px',
+                        left: '4px',
+                        background: 'rgba(0, 0, 0, 0.75)',
+                        color: '#f8fafc',
+                        fontSize: isCompact ? '8.5px' : '9px',
+                        fontWeight: 700,
+                        padding: '1px 6px',
+                        borderRadius: '3px',
+                        border: '1px solid rgba(255, 255, 255, 0.15)'
+                      }}>
+                        {item.tag || item.title}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Collage Bottom Info Bar: Vertical Stack when Compact (Canva style) or Horizontal when Center */}
+            {isCompact ? (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                textAlign: 'center',
+                gap: '6px',
+                paddingTop: '2px'
+              }}>
+                <div style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc', lineHeight: 1.3 }}>
+                  {ad.headline || 'Sponsored Multi-Frame Showcase'}
+                </div>
+                {ad.description && (
+                  <div style={{ fontSize: '11px', color: '#94a3b8', lineHeight: 1.3 }}>
+                    {ad.description}
+                  </div>
+                )}
+                {targetLink && (
+                  <div style={{
+                    width: '100%',
+                    marginTop: '2px',
+                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                    color: '#ffffff',
+                    padding: '7px 12px',
+                    borderRadius: '8px',
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '5px',
+                    boxShadow: '0 2px 8px rgba(168, 85, 247, 0.35)'
+                  }}>
+                    <Sparkles size={11} />
+                    <span>{ad.ctaText || 'Get Started Free ↗'}</span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '6px'
+              }}>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc' }}>
+                    {ad.headline || 'Sponsored Multi-Frame Showcase'}
+                  </div>
+                  {ad.description && (
+                    <div style={{ fontSize: '11px', color: '#94a3b8', maxWidth: '420px', lineHeight: 1.3 }}>
+                      {ad.description}
+                    </div>
+                  )}
+                </div>
+
+                {targetLink && (
+                  <div style={{
+                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                    color: '#ffffff',
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    boxShadow: '0 2px 8px rgba(168, 85, 247, 0.35)'
+                  }}>
+                    <Sparkles size={11} />
+                    <span>{ad.ctaText || 'Explore Series ↗'}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : ad.contentType === 'video' && ad.content ? (
+          <div style={{ borderRadius: '8px', overflow: 'hidden', position: 'relative', background: '#000' }}>
+            {videoEmbed ? (
+              <iframe
+                src={videoEmbed}
+                title={ad.label || 'Video Ad'}
+                style={{ width: '100%', height: '240px', border: 'none', display: 'block' }}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            ) : (
+              <video
+                src={ad.content}
+                controls={ad.videoControls ?? true}
+                autoPlay={ad.videoAutoplay ?? true}
+                loop={ad.videoLoop ?? true}
+                muted={ad.videoMuted ?? true}
+                playsInline
+                style={{ width: '100%', maxHeight: '240px', objectFit: 'contain', display: 'block' }}
+              />
+            )}
+
+            {/* Video Footer Banner with Info & Click Redirection Badge */}
+            <div style={{
+              padding: '10px 14px',
+              background: 'rgba(15, 23, 42, 0.95)',
+              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '8px'
+            }}>
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc' }}>
+                  {ad.headline || 'Sponsored Video Commercial'}
+                </div>
+                {ad.description && (
+                  <div style={{ fontSize: '11px', color: '#94a3b8', maxWidth: '420px' }}>
+                    {ad.description}
+                  </div>
+                )}
+              </div>
+
+              {targetLink && (
+                <div style={{
+                  background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                  color: '#ffffff',
+                  padding: '5px 12px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)'
+                }}>
+                  <Play size={11} fill="#fff" />
+                  <span>{ad.ctaText || 'Visit Sponsor ↗'}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : ad.contentType === 'image' && ad.content ? (
+          /* 2. EMBEDDED ONLINE IMAGE BANNER */
           <div style={{ borderRadius: '8px', overflow: 'hidden', position: 'relative' }}>
             <img
               src={ad.content}
@@ -1549,12 +2701,13 @@ export default function ArticleAdPlacementManager({
             )}
           </div>
         ) : ad.contentType === 'html' && ad.content ? (
+          /* 3. CUSTOM HTML EMBED */
           <div
             dangerouslySetInnerHTML={{ __html: ad.content }}
             style={{ borderRadius: '6px', overflow: 'hidden', padding: '10px', background: 'rgba(0,0,0,0.4)' }}
           />
         ) : (
-          /* Rich Interactive Banner Slot Container */
+          /* 4. INTERACTIVE BANNER SLOT CONTAINER */
           <div style={{
             background: 'rgba(0, 0, 0, 0.45)',
             border: '1px dashed rgba(168, 85, 247, 0.4)',
@@ -1605,7 +2758,7 @@ export default function ArticleAdPlacementManager({
     );
   }
 
-  // Sub-renderer: Droppable Insertion Target Line (Matching Image 1 "+ Drop Target: 📍 ...")
+  // Sub-renderer: Droppable Insertion Target Line
   function renderDropZoneSlot(zoneId, zone) {
     const isDragOver = dragOverZoneId === zoneId;
     return (

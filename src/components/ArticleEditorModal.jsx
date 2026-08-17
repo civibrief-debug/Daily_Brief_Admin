@@ -43,7 +43,8 @@ import {
   Video,
   Film,
   Play,
-  Trash2
+  Trash2,
+  Crop
 } from 'lucide-react';
 
 import { categorySubSectionsMap } from './AdminUserModal';
@@ -645,6 +646,467 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         figure.style.display = 'block';
       }
     }
+    updateImageBounds(selectedImageNode);
+    setFormData(prev => ({ ...prev, content: editorRef.current?.innerHTML || '' }));
+  };
+
+  // ── INTERACTIVE VISUAL CROP HANDLERS (IMAGE & VIDEO - MATCHING IMAGE 1 & 2) ──
+  const openCropModal = () => {
+    setCropTarget('editor');
+    if (!selectedImageNode) return;
+    const mediaEl = ['IMG', 'VIDEO', 'IFRAME'].includes(selectedImageNode.tagName)
+      ? selectedImageNode
+      : (selectedImageNode.querySelector?.('img, video, iframe') || selectedImageNode);
+
+    if (!mediaEl) return;
+
+    const isVideoTag = mediaEl.tagName === 'VIDEO';
+    const isIframe = mediaEl.tagName === 'IFRAME';
+    const isImg = mediaEl.tagName === 'IMG';
+
+    let src = '';
+    let natW = 800;
+    let natH = 600;
+
+    if (isImg) {
+      src = mediaEl.getAttribute('data-original-src') || mediaEl.getAttribute('src') || '';
+      natW = mediaEl.naturalWidth || mediaEl.clientWidth || 800;
+      natH = mediaEl.naturalHeight || mediaEl.clientHeight || 600;
+    } else if (isVideoTag) {
+      src = mediaEl.getAttribute('data-original-src') || mediaEl.getAttribute('src') || mediaEl.querySelector('source')?.getAttribute('src') || '';
+      natW = mediaEl.videoWidth || mediaEl.clientWidth || 800;
+      natH = mediaEl.videoHeight || mediaEl.clientHeight || 450;
+    } else if (isIframe) {
+      src = mediaEl.getAttribute('src') || '';
+      natW = 800;
+      natH = 450;
+    }
+
+    const savedBox = mediaEl.getAttribute('data-crop-box');
+    if (savedBox) {
+      try {
+        setCropBox(JSON.parse(savedBox));
+      } catch {
+        setCropBox({ x: 5, y: 5, width: 90, height: 90 });
+      }
+    } else {
+      setCropBox({ x: 5, y: 5, width: 90, height: 90 });
+    }
+
+    setCropMediaSrc(src);
+    setCropMediaType(isImg ? 'image' : (isVideoTag ? 'video' : 'iframe'));
+    setCropNaturalSize({ width: natW || 800, height: natH || 600 });
+    setCropAspectPreset('free');
+    setCropRotation(0);
+    setShowCropModal(true);
+  };
+
+  // Open cropper specifically for Featured Cover Image or Cover Video
+  const openCoverCropModal = (type) => {
+    const isVid = type === 'video';
+    const src = isVid ? formData.videoUrl : formData.imageUrl;
+    if (!src) {
+      alert(`Please upload or enter a Cover ${isVid ? 'Video' : 'Image'} first before cropping.`);
+      return;
+    }
+    setCropTarget(isVid ? 'coverVideo' : 'coverImage');
+    setCropMediaType(isVid ? 'video' : 'image');
+    setCropMediaSrc(src);
+    if (formData.coverCropBox) {
+      setCropBox(formData.coverCropBox);
+    } else {
+      setCropBox({ x: 5, y: 5, width: 90, height: 90 });
+    }
+    setCropNaturalSize({ width: isVid ? 1280 : 1200, height: isVid ? 720 : 800 });
+    setCropAspectPreset('free');
+    setCropRotation(0);
+    setShowCropModal(true);
+  };
+
+  const handleCropDragStart = (e, handle) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!cropContainerRef.current) return;
+    const rect = cropContainerRef.current.getBoundingClientRect();
+    cropDragRef.current = {
+      handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      startBox: { ...cropBox },
+      containerWidth: rect.width,
+      containerHeight: rect.height
+    };
+
+    const handleMouseMove = (moveEvent) => {
+      if (!cropDragRef.current) return;
+      const { handle: dragHandle, startX, startY, startBox, containerWidth, containerHeight } = cropDragRef.current;
+      const deltaX = ((moveEvent.clientX - startX) / containerWidth) * 100;
+      const deltaY = ((moveEvent.clientY - startY) / containerHeight) * 100;
+
+      let { x, y, width, height } = startBox;
+
+      if (dragHandle === 'move') {
+        x = Math.max(0, Math.min(100 - width, startBox.x + deltaX));
+        y = Math.max(0, Math.min(100 - height, startBox.y + deltaY));
+      } else {
+        // Resizing from corners and edges
+        if (dragHandle.includes('w')) {
+          const rightEdge = startBox.x + startBox.width;
+          const newX = Math.max(0, Math.min(rightEdge - 5, startBox.x + deltaX));
+          x = newX;
+          width = rightEdge - newX;
+        }
+        if (dragHandle.includes('e')) {
+          width = Math.max(5, Math.min(100 - startBox.x, startBox.width + deltaX));
+        }
+        if (dragHandle.includes('n')) {
+          const bottomEdge = startBox.y + startBox.height;
+          const newY = Math.max(0, Math.min(bottomEdge - 5, startBox.y + deltaY));
+          y = newY;
+          height = bottomEdge - newY;
+        }
+        if (dragHandle.includes('s')) {
+          height = Math.max(5, Math.min(100 - startBox.y, startBox.height + deltaY));
+        }
+
+        // Maintain aspect ratio if a preset is selected
+        if (cropAspectPreset && cropAspectPreset !== 'free' && cropAspectPreset !== 'original') {
+          const [arW, arH] = cropAspectPreset.split('/').map(Number);
+          if (arW && arH && cropNaturalSize.width && cropNaturalSize.height) {
+            const mediaRatio = cropNaturalSize.width / cropNaturalSize.height;
+            const targetRatio = (arW / arH) / mediaRatio;
+            if (dragHandle.includes('e') || dragHandle.includes('w')) {
+              height = Math.max(5, Math.min(100 - y, width / targetRatio));
+            } else if (dragHandle.includes('n') || dragHandle.includes('s')) {
+              width = Math.max(5, Math.min(100 - x, height * targetRatio));
+            }
+          }
+        }
+      }
+
+      setCropBox({
+        x: Math.round(x * 10) / 10,
+        y: Math.round(y * 10) / 10,
+        width: Math.round(width * 10) / 10,
+        height: Math.round(height * 10) / 10
+      });
+    };
+
+    const handleMouseUp = () => {
+      cropDragRef.current = null;
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const setAspectPreset = (preset) => {
+    setCropAspectPreset(preset);
+    if (!cropNaturalSize.width || !cropNaturalSize.height) return;
+
+    if (preset === 'free' || preset === 'original') {
+      setCropBox({ x: 5, y: 5, width: 90, height: 90 });
+      return;
+    }
+
+    const [arW, arH] = preset.split('/').map(Number);
+    if (!arW || !arH) return;
+
+    const mediaAspect = cropNaturalSize.width / cropNaturalSize.height;
+    const targetAspect = arW / arH;
+
+    let newWidth = 80;
+    let newHeight = 80;
+
+    if (targetAspect > mediaAspect) {
+      newWidth = 85;
+      newHeight = Math.min(90, (85 * mediaAspect) / targetAspect);
+    } else {
+      newHeight = 85;
+      newWidth = Math.min(90, (85 * targetAspect) / mediaAspect);
+    }
+
+    setCropBox({
+      x: Math.max(0, (100 - newWidth) / 2),
+      y: Math.max(0, (100 - newHeight) / 2),
+      width: Math.round(newWidth * 10) / 10,
+      height: Math.round(newHeight * 10) / 10
+    });
+  };
+
+  const applyCropToMedia = () => {
+    const insetTop = Math.max(0, cropBox.y);
+    const insetRight = Math.max(0, 100 - (cropBox.x + cropBox.width));
+    const insetBottom = Math.max(0, 100 - (cropBox.y + cropBox.height));
+    const insetLeft = Math.max(0, cropBox.x);
+
+    // Case 1: Cropping Featured Cover Image
+    if (cropTarget === 'coverImage') {
+      const imgObj = new Image();
+      imgObj.crossOrigin = 'anonymous';
+      imgObj.onload = () => {
+        try {
+          const naturalW = imgObj.naturalWidth || imgObj.width || cropNaturalSize.width || 1200;
+          const naturalH = imgObj.naturalHeight || imgObj.height || cropNaturalSize.height || 800;
+          const srcX = (cropBox.x / 100) * naturalW;
+          const srcY = (cropBox.y / 100) * naturalH;
+          const srcW = (cropBox.width / 100) * naturalW;
+          const srcH = (cropBox.height / 100) * naturalH;
+
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(srcW);
+          canvas.height = Math.round(srcH);
+          const ctx = canvas.getContext('2d');
+
+          if (cropRotation !== 0) {
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.rotate((cropRotation * Math.PI) / 180);
+            ctx.drawImage(imgObj, srcX, srcY, srcW, srcH, -srcW / 2, -srcH / 2, srcW, srcH);
+          } else {
+            ctx.drawImage(imgObj, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
+          }
+
+          const croppedUrl = canvas.toDataURL('image/jpeg', 0.95);
+          setFormData(prev => ({
+            ...prev,
+            imageUrl: croppedUrl,
+            originalCoverImageUrl: prev.originalCoverImageUrl || prev.imageUrl,
+            coverCropBox: cropBox,
+            coverAspectRatio: `${Math.round(srcW)} / ${Math.round(srcH)}`,
+            coverCropStyle: {
+              aspectRatio: `${Math.round(srcW)} / ${Math.round(srcH)}`,
+              objectFit: 'cover'
+            }
+          }));
+        } catch {
+          setFormData(prev => ({
+            ...prev,
+            coverCropBox: cropBox,
+            coverAspectRatio: `${cropBox.width} / ${cropBox.height}`,
+            coverCropStyle: {
+              clipPath: `inset(${insetTop.toFixed(2)}% ${insetRight.toFixed(2)}% ${insetBottom.toFixed(2)}% ${insetLeft.toFixed(2)}%)`,
+              aspectRatio: `${cropBox.width} / ${cropBox.height}`,
+              objectFit: 'cover'
+            }
+          }));
+        }
+        setShowCropModal(false);
+      };
+      imgObj.onerror = () => {
+        setFormData(prev => ({
+          ...prev,
+          coverCropBox: cropBox,
+          coverAspectRatio: `${cropBox.width} / ${cropBox.height}`,
+          coverCropStyle: {
+            clipPath: `inset(${insetTop.toFixed(2)}% ${insetRight.toFixed(2)}% ${insetBottom.toFixed(2)}% ${insetLeft.toFixed(2)}%)`,
+            aspectRatio: `${cropBox.width} / ${cropBox.height}`,
+            objectFit: 'cover'
+          }
+        }));
+        setShowCropModal(false);
+      };
+      imgObj.src = cropMediaSrc;
+      return;
+    }
+
+    // Case 2: Cropping Featured Cover Video
+    if (cropTarget === 'coverVideo') {
+      setFormData(prev => ({
+        ...prev,
+        coverCropBox: cropBox,
+        coverAspectRatio: `${cropBox.width} / ${cropBox.height}`,
+        coverCropStyle: {
+          clipPath: `inset(${insetTop.toFixed(2)}% ${insetRight.toFixed(2)}% ${insetBottom.toFixed(2)}% ${insetLeft.toFixed(2)}%)`,
+          aspectRatio: `${cropBox.width} / ${cropBox.height}`,
+          objectFit: 'cover'
+        }
+      }));
+      setShowCropModal(false);
+      return;
+    }
+
+    // Case 3: Cropping In-Body Article Media (Image or Video)
+    if (!selectedImageNode) return;
+    const mediaEl = ['IMG', 'VIDEO', 'IFRAME'].includes(selectedImageNode.tagName)
+      ? selectedImageNode
+      : (selectedImageNode.querySelector?.('img, video, iframe') || selectedImageNode);
+
+    if (!mediaEl) return;
+
+    const figure = selectedImageNode.closest('figure, .img-wrapper, .video-wrapper, .social-embed-wrapper') || 
+                   (selectedImageNode.tagName === 'FIGURE' ? selectedImageNode : selectedImageNode.parentElement);
+
+    const isImg = mediaEl.tagName === 'IMG';
+    const isVideo = mediaEl.tagName === 'VIDEO' || mediaEl.tagName === 'IFRAME';
+
+    // Store original src and crop box for future re-edits or resets
+    if (!mediaEl.getAttribute('data-original-src')) {
+      const orig = isImg ? (mediaEl.getAttribute('src') || '') : (mediaEl.getAttribute('src') || mediaEl.querySelector('source')?.getAttribute('src') || '');
+      if (orig) mediaEl.setAttribute('data-original-src', orig);
+    }
+
+    mediaEl.setAttribute('data-crop-box', JSON.stringify(cropBox));
+    mediaEl.setAttribute('data-crop-aspect', `${Math.round(cropBox.width)}/${Math.round(cropBox.height)}`);
+
+    if (isImg) {
+      // 1. Try Canvas Crop for crisp pixel-perfect cropped image dataURL
+      const imgObj = new Image();
+      imgObj.crossOrigin = 'anonymous';
+      imgObj.onload = () => {
+        try {
+          const naturalW = imgObj.naturalWidth || imgObj.width || cropNaturalSize.width || 800;
+          const naturalH = imgObj.naturalHeight || imgObj.height || cropNaturalSize.height || 600;
+          const srcX = (cropBox.x / 100) * naturalW;
+          const srcY = (cropBox.y / 100) * naturalH;
+          const srcW = (cropBox.width / 100) * naturalW;
+          const srcH = (cropBox.height / 100) * naturalH;
+
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(srcW);
+          canvas.height = Math.round(srcH);
+          const ctx = canvas.getContext('2d');
+
+          if (cropRotation !== 0) {
+            ctx.translate(canvas.width / 2, canvas.height / 2);
+            ctx.rotate((cropRotation * Math.PI) / 180);
+            ctx.drawImage(imgObj, srcX, srcY, srcW, srcH, -srcW / 2, -srcH / 2, srcW, srcH);
+          } else {
+            ctx.drawImage(imgObj, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
+          }
+
+          const croppedUrl = canvas.toDataURL('image/jpeg', 0.95);
+          mediaEl.src = croppedUrl;
+          mediaEl.style.aspectRatio = `${srcW} / ${srcH}`;
+          mediaEl.style.clipPath = '';
+          mediaEl.style.objectFit = 'cover';
+        } catch (err) {
+          // Fallback to CSS Inset Clip-path if canvas is tainted by CORS
+          mediaEl.style.clipPath = `inset(${insetTop.toFixed(2)}% ${insetRight.toFixed(2)}% ${insetBottom.toFixed(2)}% ${insetLeft.toFixed(2)}%)`;
+          mediaEl.style.aspectRatio = `${cropBox.width} / ${cropBox.height}`;
+          mediaEl.style.objectFit = 'cover';
+        }
+        setShowCropModal(false);
+        updateImageBounds(selectedImageNode);
+        setFormData(prev => ({ ...prev, content: editorRef.current?.innerHTML || '' }));
+      };
+      imgObj.onerror = () => {
+        mediaEl.style.clipPath = `inset(${insetTop.toFixed(2)}% ${insetRight.toFixed(2)}% ${insetBottom.toFixed(2)}% ${insetLeft.toFixed(2)}%)`;
+        mediaEl.style.aspectRatio = `${cropBox.width} / ${cropBox.height}`;
+        mediaEl.style.objectFit = 'cover';
+        setShowCropModal(false);
+        updateImageBounds(selectedImageNode);
+        setFormData(prev => ({ ...prev, content: editorRef.current?.innerHTML || '' }));
+      };
+      imgObj.src = cropMediaSrc;
+      return;
+    }
+
+    if (isVideo) {
+      // Precision viewport clipping for video
+      mediaEl.style.clipPath = `inset(${insetTop.toFixed(2)}% ${insetRight.toFixed(2)}% ${insetBottom.toFixed(2)}% ${insetLeft.toFixed(2)}%)`;
+      mediaEl.style.aspectRatio = `${cropBox.width} / ${cropBox.height}`;
+      if (figure && figure !== mediaEl) {
+        figure.style.overflow = 'hidden';
+      }
+      setShowCropModal(false);
+      updateImageBounds(selectedImageNode);
+      setFormData(prev => ({ ...prev, content: editorRef.current?.innerHTML || '' }));
+    }
+  };
+
+  const resetCropMedia = () => {
+    if (cropTarget === 'coverImage') {
+      setFormData(prev => ({
+        ...prev,
+        imageUrl: prev.originalCoverImageUrl || prev.imageUrl,
+        coverCropBox: null,
+        coverAspectRatio: null,
+        coverCropStyle: null
+      }));
+      setCropBox({ x: 0, y: 0, width: 100, height: 100 });
+      setCropRotation(0);
+      setShowCropModal(false);
+      return;
+    }
+
+    if (cropTarget === 'coverVideo') {
+      setFormData(prev => ({
+        ...prev,
+        coverCropBox: null,
+        coverAspectRatio: null,
+        coverCropStyle: null
+      }));
+      setCropBox({ x: 0, y: 0, width: 100, height: 100 });
+      setCropRotation(0);
+      setShowCropModal(false);
+      return;
+    }
+
+    if (!selectedImageNode) return;
+    const mediaEl = ['IMG', 'VIDEO', 'IFRAME'].includes(selectedImageNode.tagName)
+      ? selectedImageNode
+      : (selectedImageNode.querySelector?.('img, video, iframe') || selectedImageNode);
+
+    if (!mediaEl) return;
+
+    const figure = selectedImageNode.closest('figure, .img-wrapper, .video-wrapper, .social-embed-wrapper') || 
+                   (selectedImageNode.tagName === 'FIGURE' ? selectedImageNode : selectedImageNode.parentElement);
+
+    const origSrc = mediaEl.getAttribute('data-original-src');
+    if (origSrc && mediaEl.tagName === 'IMG') {
+      mediaEl.src = origSrc;
+    }
+
+    mediaEl.removeAttribute('data-crop-box');
+    mediaEl.removeAttribute('data-crop-aspect');
+    mediaEl.removeAttribute('data-original-src');
+    mediaEl.style.clipPath = '';
+    mediaEl.style.aspectRatio = mediaEl.tagName === 'IFRAME' ? '16/9' : '';
+    mediaEl.style.objectFit = '';
+
+    if (figure && figure !== mediaEl) {
+      figure.style.overflow = '';
+      figure.removeAttribute('data-crop-aspect');
+    }
+
+    setCropBox({ x: 0, y: 0, width: 100, height: 100 });
+    setShowCropModal(false);
+    updateImageBounds(selectedImageNode);
+    setFormData(prev => ({ ...prev, content: editorRef.current?.innerHTML || '' }));
+  };
+
+  const quickCropAspectRatio = (aspect) => {
+    if (!selectedImageNode) return;
+    const mediaEl = ['IMG', 'VIDEO', 'IFRAME'].includes(selectedImageNode.tagName)
+      ? selectedImageNode
+      : (selectedImageNode.querySelector?.('img, video, iframe') || selectedImageNode);
+
+    if (!mediaEl) return;
+
+    const figure = selectedImageNode.closest('figure, .img-wrapper, .video-wrapper, .social-embed-wrapper') || 
+                   (selectedImageNode.tagName === 'FIGURE' ? selectedImageNode : selectedImageNode.parentElement);
+
+    if (aspect === 'original') {
+      mediaEl.style.aspectRatio = mediaEl.tagName === 'IFRAME' ? '16/9' : '';
+      mediaEl.style.objectFit = '';
+      mediaEl.removeAttribute('data-crop-aspect');
+      if (figure && figure !== mediaEl) {
+        figure.removeAttribute('data-crop-aspect');
+        figure.style.overflow = '';
+      }
+    } else {
+      mediaEl.style.aspectRatio = aspect;
+      mediaEl.style.objectFit = 'cover';
+      mediaEl.setAttribute('data-crop-aspect', aspect);
+      if (figure && figure !== mediaEl) {
+        figure.setAttribute('data-crop-aspect', aspect);
+        figure.style.overflow = 'hidden';
+      }
+    }
+
+    setShowCropRatioDropdown(false);
     updateImageBounds(selectedImageNode);
     setFormData(prev => ({ ...prev, content: editorRef.current?.innerHTML || '' }));
   };
@@ -1455,7 +1917,17 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     status: 'Published',
     summary: '',
     content: '',
+    coverMediaType: 'image', // 'image' | 'video'
     imageUrl: '',
+    videoUrl: '',
+    imageCaption: '',
+    coverWidth: '100%',
+    coverHeight: '340px',
+    coverAspectRatio: null,
+    coverCropBox: null,
+    coverCropStyle: null,
+    originalCoverImageUrl: '',
+    originalCoverVideoUrl: '',
     featured: false
   });
 
@@ -1496,6 +1968,19 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   const [activeLinkPopover, setActiveLinkPopover] = useState(null);
   const [isImageLinkEditing, setIsImageLinkEditing] = useState(false);
 
+  // Interactive Visual Cropper State (Matching Image 1 & 2!)
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [cropTarget, setCropTarget] = useState('editor'); // 'editor' | 'coverImage' | 'coverVideo'
+  const [cropMediaType, setCropMediaType] = useState('image'); // 'image' | 'video' | 'iframe'
+  const [cropMediaSrc, setCropMediaSrc] = useState('');
+  const [cropBox, setCropBox] = useState({ x: 10, y: 10, width: 80, height: 80 });
+  const [cropNaturalSize, setCropNaturalSize] = useState({ width: 800, height: 600 });
+  const [cropAspectPreset, setCropAspectPreset] = useState('free');
+  const [cropRotation, setCropRotation] = useState(0);
+  const [showCropRatioDropdown, setShowCropRatioDropdown] = useState(false);
+  const cropContainerRef = useRef(null);
+  const cropDragRef = useRef(null);
+
   // Selection Floating Toolbar State
   const [floatingTool, setFloatingTool] = useState({ visible: false, top: 0, left: 0 });
   const [showFloatingColorPicker, setShowFloatingColorPicker] = useState(false);
@@ -1512,6 +1997,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   const fileInputRef = useRef(null);
   const videoFileInputRef = useRef(null);
   const headerBannerInputRef = useRef(null);
+  const headerVideoInputRef = useRef(null);
   const picturesMenuRef = useRef(null);
   const videosMenuRef = useRef(null);
   const textBoxMenuRef = useRef(null);
@@ -1561,7 +2047,17 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         status: articleToEdit.status || 'Published',
         summary: articleToEdit.summary || '',
         content: articleToEdit.content || '',
+        coverMediaType: articleToEdit.coverMediaType || (articleToEdit.videoUrl ? 'video' : 'image'),
         imageUrl: articleToEdit.imageUrl || 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
+        videoUrl: articleToEdit.videoUrl || '',
+        imageCaption: articleToEdit.imageCaption || '',
+        coverWidth: articleToEdit.coverWidth || '100%',
+        coverHeight: articleToEdit.coverHeight || '340px',
+        coverAspectRatio: articleToEdit.coverAspectRatio || null,
+        coverCropBox: articleToEdit.coverCropBox || null,
+        coverCropStyle: articleToEdit.coverCropStyle || null,
+        originalCoverImageUrl: articleToEdit.originalCoverImageUrl || articleToEdit.imageUrl || '',
+        originalCoverVideoUrl: articleToEdit.originalCoverVideoUrl || articleToEdit.videoUrl || '',
         featured: !!articleToEdit.featured,
         // Persistent Per-Article Multi-Ad Placements Configuration
         adPlacements: Array.isArray(articleToEdit.adPlacements) ? articleToEdit.adPlacements : (articleToEdit.placeholderAdEnabled ? [{
@@ -1603,7 +2099,17 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         status: 'Published',
         summary: '',
         content: '',
+        coverMediaType: 'image',
         imageUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
+        videoUrl: '',
+        imageCaption: '',
+        coverWidth: '100%',
+        coverHeight: '340px',
+        coverAspectRatio: null,
+        coverCropBox: null,
+        coverCropStyle: null,
+        originalCoverImageUrl: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
+        originalCoverVideoUrl: '',
         featured: false,
         adPlacements: [],
         placeholderAdEnabled: false,
@@ -2992,9 +3498,24 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     if (e) e.preventDefault();
     if (isSaving) return;
 
-    if (!formData.title?.trim()) {
-      alert("Please enter a headline before saving.");
-      return;
+    const trimmedTitle = formData.title?.trim() || '';
+    const trimmedKicker = (formData.kicker?.trim() || formData.supertitle?.trim() || '');
+
+    // MANDATORY PUBLISH REQUIREMENT: Article CANNOT be published without both Supertitle and Headline Title!
+    // (Saving drafts or submitting drafts for edit is never blocked)
+    if (targetStatus === 'Published') {
+      if (!trimmedTitle && !trimmedKicker) {
+        alert("⚠️ CANNOT PUBLISH ARTICLE: Both Supertitle (Kicker) and Headline Title are missing.\n\nPlease enter both a Supertitle and a Headline Title before publishing.");
+        return;
+      }
+      if (!trimmedTitle) {
+        alert("⚠️ CANNOT PUBLISH ARTICLE: Headline Title is missing.\n\nPlease enter a Headline Title before publishing.");
+        return;
+      }
+      if (!trimmedKicker) {
+        alert("⚠️ CANNOT PUBLISH ARTICLE: Supertitle (Kicker) is missing.\n\nPlease enter a Supertitle (e.g. SPECIAL REPORT, EXCLUSIVE, or Category Theme) above the headline before publishing.");
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -3032,6 +3553,9 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
       const payload = {
         ...formData,
+        title: targetStatus === 'Published' ? trimmedTitle : (trimmedTitle || 'Untitled Draft'),
+        kicker: trimmedKicker,
+        supertitle: trimmedKicker,
         isSuperAdmin,
         userRole: currentUser?.roleId || (isSuperAdmin ? 'super_admin' : 'content_admin'),
         authorId: formData.authorId || currentUser?.id || 'adm-author',
@@ -3045,6 +3569,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
       } else {
         await addArticle(payload);
       }
+      setShowPreviewModal(false);
       onClose();
     } catch (err) {
       console.error("Save Action Error:", err);
@@ -3068,28 +3593,37 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
           {/* Kicker / Supertitle (Overline) */}
           <div className="form-group" style={{ marginBottom: '1rem' }}>
             <label style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span>Kicker / Supertitle (Overline — Appears Above Headline)</span>
-              <span style={{ color: '#38bdf8', fontSize: '10px', textTransform: 'none', fontWeight: 600 }}>Optional: Category context, Location, or Theme</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>Supertitle / Kicker (Overline)</span>
+                <span style={{ color: '#ef4444', fontWeight: 900, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '1px 6px', borderRadius: '4px', fontSize: '10px' }}>
+                  * Required to Publish
+                </span>
+              </span>
+              <span style={{ color: '#38bdf8', fontSize: '10px', textTransform: 'none', fontWeight: 600 }}>Appears above headline • Context, location, or theme</span>
             </label>
             <input
               type="text"
               className="form-control"
-              placeholder="e.g. SPECIAL REPORT • PARIS 2026 • EXCLUSIVE"
-              value={formData.kicker || ''}
-              onChange={(e) => setFormData({ ...formData, kicker: e.target.value })}
+              placeholder="e.g. SPECIAL REPORT • PARIS 2026 • EXCLUSIVE INVESTIGATION"
+              value={formData.kicker || formData.supertitle || ''}
+              onChange={(e) => setFormData({ ...formData, kicker: e.target.value, supertitle: e.target.value })}
             />
           </div>
 
           {/* Headline Title */}
           <div className="form-group">
-            <label style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px' }}>Headline Title</label>
+            <label style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>Headline Title</span>
+              <span style={{ color: '#ef4444', fontWeight: 900, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '1px 6px', borderRadius: '4px', fontSize: '10px' }}>
+                * Required to Publish
+              </span>
+            </label>
             <input
               type="text"
               className="form-control"
               placeholder="e.g. Breaking News: Economic Forum Update..."
-              value={formData.title}
+              value={formData.title || ''}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              required
             />
           </div>
 
@@ -3232,11 +3766,60 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
             />
           </div>
 
-          {/* FEATURED COVER IMAGE DUAL-OPTION SELECTION & LIVE PREVIEW */}
+          {/* FEATURED COVER MEDIA (IMAGE & VIDEO) DUAL-STUDIO WITH CROP & RESIZE */}
           <div className="form-group" style={{ marginBottom: '1.25rem' }}>
-            <label style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px', marginBottom: '8px', display: 'block' }}>
-              Featured Article Cover Image (Local File Upload OR Web Image URL)
-            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+              <label style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.5px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>Featured Article Cover Media (Image or Video)</span>
+                <span style={{ fontSize: '10px', color: '#38bdf8', fontWeight: 600, textTransform: 'none' }}>
+                  Supports Device Upload, Web URL, On-Canvas Cropping & Resizing
+                </span>
+              </label>
+
+              {/* Cover Media Type Selector Tabs */}
+              <div style={{ display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: '6px', padding: '2px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, coverMediaType: 'image' }))}
+                  style={{
+                    padding: '4px 12px',
+                    borderRadius: '4px',
+                    border: 'none',
+                    background: formData.coverMediaType !== 'video' ? '#2563eb' : 'transparent',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <span>🖼️ Cover Image</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, coverMediaType: 'video' }))}
+                  style={{
+                    padding: '4px 12px',
+                    borderRadius: '4px',
+                    border: 'none',
+                    background: formData.coverMediaType === 'video' ? '#7c3aed' : 'transparent',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <span>🎬 Cover Video</span>
+                </button>
+              </div>
+            </div>
             
             <div style={{
               background: '#0f172a',
@@ -3247,77 +3830,513 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
               flexDirection: 'column',
               gap: '12px'
             }}>
-              {/* Option 1: Prominent Device File Upload Button */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={() => headerBannerInputRef.current?.click()}
-                  style={{
-                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '10px 18px',
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
-                    transition: 'transform 0.15s ease'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-1px)'}
-                  onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                >
-                  <span>📁 Upload Image from Computer / Device</span>
-                </button>
+              {/* SECTION A: COVER IMAGE MODE */}
+              {formData.coverMediaType !== 'video' && (
+                <>
+                  {/* Upload & Paste URL Controls */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => headerBannerInputRef.current?.click()}
+                      style={{
+                        background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '8px 16px',
+                        fontSize: '12.5px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)'
+                      }}
+                    >
+                      <span>📁 Upload Image from Device</span>
+                    </button>
 
-                <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>OR paste web image URL:</span>
-              </div>
-
-              {/* Option 2: Image URL Input Field */}
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="url"
-                  className="form-control"
-                  placeholder="https://images.unsplash.com/... or paste social post link (Twitter, Instagram, YouTube, etc.)"
-                  value={formData.imageUrl || ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setFormData(prev => ({ ...prev, imageUrl: val }));
-                  }}
-                  onPaste={async (e) => {
-                    const pasted = e.clipboardData?.getData('text');
-                    if (pasted && /(?:twitter\.com|x\.com|youtube\.com|youtu\.be|instagram\.com|facebook\.com|reddit\.com|pinterest\.com)/i.test(pasted) && !/\.(jpg|jpeg|png|webp|gif|svg|avif)(\?.*)?$/i.test(pasted)) {
-                      setTimeout(async () => {
-                        try {
-                          const res = await fetch('/api/extract-media-image', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ url: pasted.trim() })
-                          });
-                          const json = await res.json();
-                          if (json.success && json.imageUrl) {
-                            setFormData(prev => ({ ...prev, imageUrl: json.imageUrl }));
+                    <div style={{ flex: 1, display: 'flex', gap: '6px' }}>
+                      <input
+                        type="url"
+                        className="form-control"
+                        placeholder="https://images.unsplash.com/... or paste social post link (Twitter, Instagram, etc.)"
+                        value={formData.imageUrl || ''}
+                        onChange={(e) => setFormData(prev => ({ ...prev, imageUrl: e.target.value, originalCoverImageUrl: e.target.value }))}
+                        onPaste={async (e) => {
+                          const pasted = e.clipboardData?.getData('text');
+                          if (pasted && /(?:twitter\.com|x\.com|youtube\.com|youtu\.be|instagram\.com|facebook\.com|reddit\.com|pinterest\.com)/i.test(pasted) && !/\.(jpg|jpeg|png|webp|gif|svg|avif)(\?.*)?$/i.test(pasted)) {
+                            setTimeout(async () => {
+                              try {
+                                const res = await fetch('/api/extract-media-image', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ url: pasted.trim() })
+                                });
+                                const json = await res.json();
+                                if (json.success && json.imageUrl) {
+                                  setFormData(prev => ({ ...prev, imageUrl: json.imageUrl, originalCoverImageUrl: json.imageUrl }));
+                                }
+                              } catch (err) {
+                                console.warn('Cover image extract error:', err);
+                              }
+                            }, 20);
                           }
-                        } catch (err) {
-                          console.warn('Cover image paste extract error:', err);
-                        }
-                      }, 20);
-                    }
-                  }}
-                  style={{ flex: 1, background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)' }}
+                        }}
+                        style={{ flex: 1, background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', fontSize: '12.5px' }}
+                      />
+                      {formData.imageUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, imageUrl: '', originalCoverImageUrl: '', coverCropBox: null, coverCropStyle: null }))}
+                          style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', padding: '0 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Cover Image Action Toolbar: Crop & Resize Controls */}
+                  {formData.imageUrl && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: 'rgba(255,255,255,0.03)',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      flexWrap: 'wrap',
+                      gap: '8px'
+                    }}>
+                      {/* Left: Interactive Crop Button */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => openCoverCropModal('image')}
+                          style={{
+                            background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '6px 14px',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            boxShadow: '0 2px 8px rgba(2, 132, 199, 0.4)'
+                          }}
+                        >
+                          <Crop size={14} color="#ffffff" />
+                          <span>✂️ Crop & Frame Image</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData(prev => ({
+                              ...prev,
+                              imageUrl: prev.originalCoverImageUrl || prev.imageUrl,
+                              coverWidth: '100%',
+                              coverHeight: '340px',
+                              coverCropBox: null,
+                              coverAspectRatio: null,
+                              coverCropStyle: null
+                            }));
+                          }}
+                          style={{
+                            background: 'rgba(255,255,255,0.06)',
+                            color: '#94a3b8',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            borderRadius: '6px',
+                            padding: '6px 10px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                          title="Reset size and crop to defaults"
+                        >
+                          ↺ Reset Size & Crop
+                        </button>
+                      </div>
+
+                      {/* Right: Width & Height Resizing Presets */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                        {/* Width Selector */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8' }}>WIDTH:</span>
+                          {[
+                            { label: '100%', val: '100%' },
+                            { label: '75%', val: '75%' },
+                            { label: '50%', val: '50%' },
+                            { label: '35%', val: '35%' }
+                          ].map(opt => (
+                            <button
+                              key={opt.val}
+                              type="button"
+                              onClick={() => setFormData(prev => ({ ...prev, coverWidth: opt.val }))}
+                              style={{
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                border: (formData.coverWidth === opt.val || (!formData.coverWidth && opt.val === '100%')) ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                                background: (formData.coverWidth === opt.val || (!formData.coverWidth && opt.val === '100%')) ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+                                color: (formData.coverWidth === opt.val || (!formData.coverWidth && opt.val === '100%')) ? '#38bdf8' : '#cbd5e1',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Height Selector */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8' }}>HEIGHT:</span>
+                          {[
+                            { label: 'Auto', val: 'auto' },
+                            { label: '220px', val: '220px' },
+                            { label: '340px', val: '340px' },
+                            { label: '460px', val: '460px' },
+                            { label: '580px', val: '580px' }
+                          ].map(opt => (
+                            <button
+                              key={opt.val}
+                              type="button"
+                              onClick={() => setFormData(prev => ({ ...prev, coverHeight: opt.val }))}
+                              style={{
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                border: (formData.coverHeight === opt.val || (!formData.coverHeight && opt.val === '340px')) ? '1px solid #a855f7' : '1px solid rgba(255,255,255,0.1)',
+                                background: (formData.coverHeight === opt.val || (!formData.coverHeight && opt.val === '340px')) ? 'rgba(168, 85, 247, 0.2)' : 'transparent',
+                                color: (formData.coverHeight === opt.val || (!formData.coverHeight && opt.val === '340px')) ? '#c084fc' : '#cbd5e1',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Live Cover Image Preview Box */}
+                  {formData.imageUrl && (
+                    <div style={{
+                      width: formData.coverWidth || '100%',
+                      margin: '0 auto',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      maxHeight: formData.coverHeight === 'auto' ? 'none' : (formData.coverHeight || '340px'),
+                      background: '#020617',
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      <img
+                        src={formData.imageUrl}
+                        alt="Article Cover Preview"
+                        style={{
+                          width: '100%',
+                          height: formData.coverHeight === 'auto' ? 'auto' : (formData.coverHeight || '340px'),
+                          maxHeight: formData.coverHeight === 'auto' ? 'none' : (formData.coverHeight || '340px'),
+                          objectFit: 'cover',
+                          display: 'block',
+                          ...formData.coverCropStyle
+                        }}
+                        onError={(e) => {
+                          e.currentTarget.src = 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80';
+                        }}
+                      />
+                      <div style={{
+                        position: 'absolute',
+                        bottom: '8px',
+                        left: '8px',
+                        background: 'rgba(9, 13, 22, 0.85)',
+                        backdropFilter: 'blur(4px)',
+                        color: '#38bdf8',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
+                        <span>✓ Cover Image Active</span>
+                        <span>•</span>
+                        <span>{formData.coverWidth || '100%'} W</span>
+                        <span>•</span>
+                        <span>{formData.coverHeight || '340px'} H</span>
+                        {formData.coverCropBox && <span>• ✂️ Cropped</span>}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* SECTION B: COVER VIDEO MODE */}
+              {formData.coverMediaType === 'video' && (
+                <>
+                  {/* Upload & Paste Video URL Controls */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      onClick={() => headerVideoInputRef.current?.click()}
+                      style={{
+                        background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        padding: '8px 16px',
+                        fontSize: '12.5px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        boxShadow: '0 4px 12px rgba(124, 58, 237, 0.3)'
+                      }}
+                    >
+                      <span>🎬 Upload Video from Device</span>
+                    </button>
+
+                    <div style={{ flex: 1, display: 'flex', gap: '6px' }}>
+                      <input
+                        type="url"
+                        className="form-control"
+                        placeholder="https://... direct MP4/WebM video URL or YouTube/Vimeo link"
+                        value={formData.videoUrl || ''}
+                        onChange={(e) => setFormData(prev => ({ ...prev, videoUrl: e.target.value, originalCoverVideoUrl: e.target.value }))}
+                        style={{ flex: 1, background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', fontSize: '12.5px' }}
+                      />
+                      {formData.videoUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, videoUrl: '', originalCoverVideoUrl: '', coverCropBox: null, coverCropStyle: null }))}
+                          style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', padding: '0 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Cover Video Action Toolbar: Crop & Resize Controls */}
+                  {formData.videoUrl && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      background: 'rgba(255,255,255,0.03)',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      flexWrap: 'wrap',
+                      gap: '8px'
+                    }}>
+                      {/* Left: Interactive Video Crop Button */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={() => openCoverCropModal('video')}
+                          style={{
+                            background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '6px 14px',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            boxShadow: '0 2px 8px rgba(2, 132, 199, 0.4)'
+                          }}
+                        >
+                          <Crop size={14} color="#ffffff" />
+                          <span>✂️ Crop & Frame Video</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData(prev => ({
+                              ...prev,
+                              videoUrl: prev.originalCoverVideoUrl || prev.videoUrl,
+                              coverWidth: '100%',
+                              coverHeight: '340px',
+                              coverCropBox: null,
+                              coverAspectRatio: null,
+                              coverCropStyle: null
+                            }));
+                          }}
+                          style={{
+                            background: 'rgba(255,255,255,0.06)',
+                            color: '#94a3b8',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            borderRadius: '6px',
+                            padding: '6px 10px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                          title="Reset video size and crop to defaults"
+                        >
+                          ↺ Reset Size & Crop
+                        </button>
+                      </div>
+
+                      {/* Right: Width & Height Resizing Presets */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                        {/* Width Selector */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8' }}>WIDTH:</span>
+                          {[
+                            { label: '100%', val: '100%' },
+                            { label: '75%', val: '75%' },
+                            { label: '50%', val: '50%' }
+                          ].map(opt => (
+                            <button
+                              key={opt.val}
+                              type="button"
+                              onClick={() => setFormData(prev => ({ ...prev, coverWidth: opt.val }))}
+                              style={{
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                border: (formData.coverWidth === opt.val || (!formData.coverWidth && opt.val === '100%')) ? '1px solid #38bdf8' : '1px solid rgba(255,255,255,0.1)',
+                                background: (formData.coverWidth === opt.val || (!formData.coverWidth && opt.val === '100%')) ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+                                color: (formData.coverWidth === opt.val || (!formData.coverWidth && opt.val === '100%')) ? '#38bdf8' : '#cbd5e1',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Height Selector */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8' }}>HEIGHT:</span>
+                          {[
+                            { label: 'Auto (16:9)', val: 'auto' },
+                            { label: '240px', val: '240px' },
+                            { label: '340px', val: '340px' },
+                            { label: '480px', val: '480px' }
+                          ].map(opt => (
+                            <button
+                              key={opt.val}
+                              type="button"
+                              onClick={() => setFormData(prev => ({ ...prev, coverHeight: opt.val }))}
+                              style={{
+                                padding: '3px 8px',
+                                borderRadius: '4px',
+                                border: (formData.coverHeight === opt.val || (!formData.coverHeight && opt.val === '340px')) ? '1px solid #c084fc' : '1px solid rgba(255,255,255,0.1)',
+                                background: (formData.coverHeight === opt.val || (!formData.coverHeight && opt.val === '340px')) ? 'rgba(168, 85, 247, 0.2)' : 'transparent',
+                                color: (formData.coverHeight === opt.val || (!formData.coverHeight && opt.val === '340px')) ? '#c084fc' : '#cbd5e1',
+                                fontSize: '11px',
+                                fontWeight: 700,
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Live Cover Video Preview Box */}
+                  {formData.videoUrl && (
+                    <div style={{
+                      width: formData.coverWidth || '100%',
+                      margin: '0 auto',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      maxHeight: formData.coverHeight === 'auto' ? 'none' : (formData.coverHeight || '340px'),
+                      background: '#000000',
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}>
+                      {/(?:youtube\.com|youtu\.be|vimeo\.com)/i.test(formData.videoUrl) ? (
+                        <div style={{ width: '100%', height: formData.coverHeight || '340px', ...formData.coverCropStyle }}>
+                          <iframe
+                            src={formData.videoUrl.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
+                            title="Cover Video"
+                            style={{ width: '100%', height: '100%', border: 'none' }}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        </div>
+                      ) : (
+                        <video
+                          src={formData.videoUrl}
+                          controls
+                          autoPlay
+                          muted
+                          loop
+                          playsInline
+                          style={{
+                            width: '100%',
+                            height: formData.coverHeight === 'auto' ? 'auto' : (formData.coverHeight || '340px'),
+                            maxHeight: formData.coverHeight === 'auto' ? 'none' : (formData.coverHeight || '340px'),
+                            objectFit: 'cover',
+                            display: 'block',
+                            ...formData.coverCropStyle
+                          }}
+                        />
+                      )}
+                      <div style={{
+                        position: 'absolute',
+                        bottom: '8px',
+                        left: '8px',
+                        background: 'rgba(9, 13, 22, 0.85)',
+                        backdropFilter: 'blur(4px)',
+                        color: '#c084fc',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
+                        <span>🎬 Cover Video Active</span>
+                        <span>•</span>
+                        <span>{formData.coverWidth || '100%'} W</span>
+                        {formData.coverCropBox && <span>• ✂️ Cropped</span>}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Caption & Attribution Field */}
+              <div style={{ marginTop: '4px' }}>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="Optional Media Caption / Credit (e.g. 'Photo by Reuters • Tokyo 2026' or 'Video courtesy of Bloomberg News')"
+                  value={formData.imageCaption || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, imageCaption: e.target.value }))}
+                  style={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', fontSize: '12px' }}
                 />
-                {formData.imageUrl && (
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, imageUrl: '' })}
-                    style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', padding: '0 12px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    Clear
-                  </button>
-                )}
               </div>
 
               {/* Hidden Native File Input for Cover Image */}
@@ -3350,7 +4369,14 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                         const ctx = canvas.getContext('2d');
                         ctx.drawImage(img, 0, 0, width, height);
                         const compressed = canvas.toDataURL('image/jpeg', 0.85);
-                        setFormData(prev => ({ ...prev, imageUrl: compressed }));
+                        setFormData(prev => ({
+                          ...prev,
+                          coverMediaType: 'image',
+                          imageUrl: compressed,
+                          originalCoverImageUrl: compressed,
+                          coverCropBox: null,
+                          coverCropStyle: null
+                        }));
                       };
                       img.src = raw;
                     };
@@ -3359,22 +4385,37 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 }}
               />
 
-              {/* Live Image Preview */}
-              {formData.imageUrl && (
-                <div style={{ position: 'relative', marginTop: '4px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.15)', maxHeight: '160px', background: '#020617' }}>
-                  <img
-                    src={formData.imageUrl}
-                    alt="Article Cover Preview"
-                    style={{ width: '100%', height: '160px', objectFit: 'cover' }}
-                    onError={(e) => {
-                      e.currentTarget.src = 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80';
-                    }}
-                  />
-                  <div style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(9, 13, 22, 0.85)', backdropFilter: 'blur(4px)', color: '#38bdf8', fontSize: '11px', fontWeight: 700, padding: '3px 8px', borderRadius: '4px' }}>
-                    ✓ Cover Image Active
-                  </div>
-                </div>
-              )}
+              {/* Hidden Native File Input for Cover Video */}
+              <input
+                ref={headerVideoInputRef}
+                type="file"
+                accept="video/*"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    if (file.size > 50 * 1024 * 1024) {
+                      alert("Selected video is larger than 50MB. Please use a smaller file or enter an online link.");
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      const dataUrl = ev.target?.result;
+                      if (dataUrl) {
+                        setFormData(prev => ({
+                          ...prev,
+                          coverMediaType: 'video',
+                          videoUrl: dataUrl,
+                          originalCoverVideoUrl: dataUrl,
+                          coverCropBox: null,
+                          coverCropStyle: null
+                        }));
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                }}
+              />
             </div>
           </div>
 
@@ -4278,7 +5319,96 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
                   <div style={sectionDividerStyle} />
 
-                  {/* SECTION 2: WRAP TEXT & ALIGNMENT */}
+                  {/* SECTION 2: CROP PICTURE & ASPECT RATIO */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#ec4899', textTransform: 'uppercase', marginRight: '2px' }}>Crop:</span>
+                    
+                    <button
+                      type="button"
+                      onMouseDown={preventFocusLoss}
+                      onClick={openCropModal}
+                      style={{
+                        ...btnStyle,
+                        background: 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)',
+                        color: '#ffffff',
+                        border: 'none',
+                        fontWeight: 800,
+                        gap: '5px',
+                        boxShadow: '0 2px 8px rgba(236, 72, 153, 0.4)'
+                      }}
+                      title="Open Interactive Crop & Focal Framing Studio"
+                    >
+                      <Crop size={14} />
+                      <span>✂️ Crop Picture</span>
+                    </button>
+
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        type="button"
+                        onMouseDown={preventFocusLoss}
+                        onClick={() => setShowCropRatioDropdown(prev => !prev)}
+                        style={{ ...btnStyle, fontSize: '11px', gap: '3px', background: showCropRatioDropdown ? 'rgba(236,72,153,0.3)' : 'rgba(255,255,255,0.08)' }}
+                        title="Quick Aspect Ratio Crop"
+                      >
+                        <span>Aspect Ratio</span>
+                        <ChevronDown size={11} />
+                      </button>
+
+                      {showCropRatioDropdown && (
+                        <div style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 6px)',
+                          left: 0,
+                          width: '180px',
+                          background: '#0f172a',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: '8px',
+                          padding: '6px 0',
+                          zIndex: 999999,
+                          boxShadow: '0 12px 30px rgba(0,0,0,0.85)'
+                        }}>
+                          {[
+                            { label: 'Original (Uncropped)', val: 'original' },
+                            { label: '16:9 (Widescreen)', val: '16/9' },
+                            { label: '4:3 (Standard)', val: '4/3' },
+                            { label: '1:1 (Square)', val: '1/1' },
+                            { label: '9:16 (Vertical Story)', val: '9/16' },
+                            { label: '21:9 (Cinematic)', val: '21/9' },
+                            { label: '3:2 (Classic 35mm)', val: '3/2' }
+                          ].map(item => (
+                            <button
+                              key={item.val}
+                              type="button"
+                              onMouseDown={preventFocusLoss}
+                              onClick={() => quickCropAspectRatio(item.val)}
+                              style={{
+                                width: '100%',
+                                padding: '6px 12px',
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#f8fafc',
+                                fontSize: '11.5px',
+                                fontWeight: 600,
+                                textAlign: 'left',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.background = 'rgba(236,72,153,0.2)'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                            >
+                              <span>{item.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={sectionDividerStyle} />
+
+                  {/* SECTION 3: WRAP TEXT & ALIGNMENT */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ fontSize: '11px', fontWeight: 800, color: '#facc15', textTransform: 'uppercase', marginRight: '4px' }}>Wrap Text:</span>
                     <button 
@@ -4609,7 +5739,91 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
                   <div style={sectionDividerStyle} />
 
-                  {/* SECTION 2: WRAP TEXT & ALIGNMENT */}
+                  {/* SECTION 2: CROP VIDEO & ASPECT RATIO */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: '#ec4899', textTransform: 'uppercase', marginRight: '2px' }}>Crop:</span>
+                    
+                    <button
+                      type="button"
+                      onMouseDown={preventFocusLoss}
+                      onClick={openCropModal}
+                      style={{
+                        ...btnStyle,
+                        background: 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)',
+                        color: '#ffffff',
+                        border: 'none',
+                        fontWeight: 800,
+                        gap: '5px',
+                        boxShadow: '0 2px 8px rgba(236, 72, 153, 0.4)'
+                      }}
+                      title="Open Interactive Crop & Focal Framing Studio for Video"
+                    >
+                      <Crop size={14} />
+                      <span>✂️ Crop Video</span>
+                    </button>
+
+                    <div style={{ position: 'relative' }}>
+                      <button
+                        type="button"
+                        onMouseDown={preventFocusLoss}
+                        onClick={() => setShowCropRatioDropdown(prev => !prev)}
+                        style={{ ...btnStyle, fontSize: '11px', gap: '3px', background: showCropRatioDropdown ? 'rgba(236,72,153,0.3)' : 'rgba(255,255,255,0.08)' }}
+                        title="Quick Aspect Ratio Crop for Video"
+                      >
+                        <span>Aspect Ratio</span>
+                        <ChevronDown size={11} />
+                      </button>
+
+                      {showCropRatioDropdown && (
+                        <div style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 6px)',
+                          left: 0,
+                          width: '180px',
+                          background: '#0f172a',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: '8px',
+                          padding: '6px 0',
+                          zIndex: 999999,
+                          boxShadow: '0 12px 30px rgba(0,0,0,0.85)'
+                        }}>
+                          {[
+                            { label: 'Original (16:9 Standard)', val: '16/9' },
+                            { label: '4:3 (Standard TV)', val: '4/3' },
+                            { label: '1:1 (Square Reel)', val: '1/1' },
+                            { label: '9:16 (Vertical Short)', val: '9/16' },
+                            { label: '21:9 (Ultrawide Movie)', val: '21/9' }
+                          ].map(item => (
+                            <button
+                              key={item.val}
+                              type="button"
+                              onMouseDown={preventFocusLoss}
+                              onClick={() => quickCropAspectRatio(item.val)}
+                              style={{
+                                width: '100%',
+                                padding: '6px 12px',
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#f8fafc',
+                                fontSize: '11.5px',
+                                fontWeight: 600,
+                                textAlign: 'left',
+                                cursor: 'pointer'
+                              }}
+                              onMouseEnter={e => e.currentTarget.style.background = 'rgba(236,72,153,0.2)'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                            >
+                              <span>{item.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={sectionDividerStyle} />
+
+                  {/* SECTION 3: WRAP TEXT & ALIGNMENT */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <span style={{ fontSize: '11px', fontWeight: 800, color: '#facc15', textTransform: 'uppercase', marginRight: '4px' }}>Wrap Text:</span>
                     <button 
@@ -4830,6 +6044,30 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                           >
                             <span>{isVid ? '🎥 Video Format ▾' : '🖼️ Picture Format ▾'}</span>
                           </div>
+
+                          <button
+                            type="button"
+                            style={{
+                              background: '#ec4899',
+                              color: '#ffffff',
+                              padding: '3px 9px',
+                              borderRadius: '6px',
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              border: 'none',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              boxShadow: '0 4px 14px rgba(0,0,0,0.6)',
+                              pointerEvents: 'auto',
+                              cursor: 'pointer'
+                            }}
+                            onMouseDown={preventFocusLoss}
+                            onClick={openCropModal}
+                            title={isVid ? 'Crop Video & Frame Focal Part' : 'Crop Picture & Frame Focal Part'}
+                          >
+                            <Crop size={12} color="#ffffff" /> Crop
+                          </button>
 
                           <button
                             type="button"
@@ -6384,6 +7622,491 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         </div>
       )}
 
+      {/* SUB-MODAL 6: INTERACTIVE VISUAL CROP STUDIO (Matching Windows Photos / Image 1 & 2) */}
+      {showCropModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.96)',
+          backdropFilter: 'blur(12px)',
+          zIndex: 9999999,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px 24px',
+          userSelect: 'none'
+        }}>
+          {/* TOP BAR: Action controls (Matching Image 1: Reset, Cancel, Save options) */}
+          <div style={{
+            width: '100%',
+            maxWidth: '1200px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingBottom: '12px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
+          }}>
+            {/* Top Left: Reset & Zoom Info */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <button
+                type="button"
+                onClick={() => setCropBox({ x: 0, y: 0, width: 100, height: 100 })}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  color: '#cbd5e1',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  padding: '6px 14px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+                title="Reset Crop Area to 100%"
+              >
+                <span>↺ Reset</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={resetCropMedia}
+                style={{
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  color: '#f87171',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+                title="Revert back to original uncropped source"
+              >
+                Revert to Original
+              </button>
+            </div>
+
+            {/* Top Center: Crop Mode Indicator */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Crop size={18} color="#38bdf8" />
+              <span style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc', letterSpacing: '0.3px' }}>
+                Interactive Crop & Framing Tool
+              </span>
+              <span style={{ fontSize: '11px', color: '#94a3b8', marginLeft: '6px' }}>
+                (Drag corners/edges or move crop box)
+              </span>
+            </div>
+
+            {/* Top Right: Cancel & Save options (Matching Image 1) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setShowCropModal(false)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  color: '#e2e8f0',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  padding: '7px 18px',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={applyCropToMedia}
+                style={{
+                  background: '#0284c7',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '7px 22px',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(2, 132, 199, 0.5)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <span>Save / Apply Crop ✓</span>
+              </button>
+            </div>
+          </div>
+
+          {/* MAIN WORKSPACE CANVAS (Matching Image 1 & 2) */}
+          <div style={{
+            flex: 1,
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px 0',
+            overflow: 'hidden'
+          }}>
+            {/* The Media + Crop Box Container */}
+            <div
+              ref={cropContainerRef}
+              style={{
+                position: 'relative',
+                display: 'inline-block',
+                maxWidth: '90vw',
+                maxHeight: '62vh',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.8)',
+                borderRadius: '4px',
+                overflow: 'hidden',
+                lineHeight: 0
+              }}
+            >
+              {/* Media Element (Image or Video) */}
+              {cropMediaType === 'image' && (
+                <img
+                  src={cropMediaSrc}
+                  alt="Crop Target"
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    if (img.naturalWidth && img.naturalHeight) {
+                      setCropNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+                    }
+                  }}
+                  style={{
+                    display: 'block',
+                    maxWidth: '85vw',
+                    maxHeight: '62vh',
+                    objectFit: 'contain',
+                    pointerEvents: 'none',
+                    userSelect: 'none',
+                    transform: cropRotation !== 0 ? `rotate(${cropRotation}deg)` : 'none',
+                    transition: 'transform 0.15s ease'
+                  }}
+                />
+              )}
+
+              {cropMediaType === 'video' && (
+                <video
+                  src={cropMediaSrc}
+                  controls={false}
+                  autoPlay
+                  muted
+                  loop
+                  onLoadedMetadata={(e) => {
+                    const vid = e.currentTarget;
+                    if (vid.videoWidth && vid.videoHeight) {
+                      setCropNaturalSize({ width: vid.videoWidth, height: vid.videoHeight });
+                    }
+                  }}
+                  style={{
+                    display: 'block',
+                    maxWidth: '85vw',
+                    maxHeight: '62vh',
+                    objectFit: 'contain',
+                    pointerEvents: 'none',
+                    userSelect: 'none',
+                    transform: cropRotation !== 0 ? `rotate(${cropRotation}deg)` : 'none'
+                  }}
+                />
+              )}
+
+              {cropMediaType === 'iframe' && (
+                <div style={{ width: '640px', height: '360px', background: '#000000', pointerEvents: 'none' }}>
+                  <iframe src={cropMediaSrc} style={{ width: '100%', height: '100%', border: 'none' }} />
+                </div>
+              )}
+
+              {/* 4 DIMMED BACKDROP MASKS (Outside Crop Box, Matching Image 2) */}
+              {/* Top Shaded Mask */}
+              <div style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: `${cropBox.y}%`,
+                background: 'rgba(0, 0, 0, 0.65)',
+                pointerEvents: 'none'
+              }} />
+              {/* Bottom Shaded Mask */}
+              <div style={{
+                position: 'absolute',
+                top: `${cropBox.y + cropBox.height}%`,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'rgba(0, 0, 0, 0.65)',
+                pointerEvents: 'none'
+              }} />
+              {/* Left Shaded Mask */}
+              <div style={{
+                position: 'absolute',
+                top: `${cropBox.y}%`,
+                left: 0,
+                width: `${cropBox.x}%`,
+                height: `${cropBox.height}%`,
+                background: 'rgba(0, 0, 0, 0.65)',
+                pointerEvents: 'none'
+              }} />
+              {/* Right Shaded Mask */}
+              <div style={{
+                position: 'absolute',
+                top: `${cropBox.y}%`,
+                left: `${cropBox.x + cropBox.width}%`,
+                right: 0,
+                height: `${cropBox.height}%`,
+                background: 'rgba(0, 0, 0, 0.65)',
+                pointerEvents: 'none'
+              }} />
+
+              {/* ACTIVE CROP BOUNDING BOX (Matching Image 2!) */}
+              <div
+                onMouseDown={(e) => handleCropDragStart(e, 'move')}
+                style={{
+                  position: 'absolute',
+                  left: `${cropBox.x}%`,
+                  top: `${cropBox.y}%`,
+                  width: `${cropBox.width}%`,
+                  height: `${cropBox.height}%`,
+                  boxShadow: '0 0 0 1px rgba(255, 255, 255, 0.85)',
+                  cursor: 'move',
+                  boxSizing: 'border-box'
+                }}
+              >
+                {/* 3x3 Dashed Rule-of-Thirds Grid Lines (Matching Image 2) */}
+                <div style={{ position: 'absolute', left: '33.333%', top: 0, bottom: 0, borderLeft: '1px dashed rgba(255, 255, 255, 0.4)', pointerEvents: 'none' }} />
+                <div style={{ position: 'absolute', left: '66.666%', top: 0, bottom: 0, borderLeft: '1px dashed rgba(255, 255, 255, 0.4)', pointerEvents: 'none' }} />
+                <div style={{ position: 'absolute', top: '33.333%', left: 0, right: 0, borderTop: '1px dashed rgba(255, 255, 255, 0.4)', pointerEvents: 'none' }} />
+                <div style={{ position: 'absolute', top: '66.666%', left: 0, right: 0, borderTop: '1px dashed rgba(255, 255, 255, 0.4)', pointerEvents: 'none' }} />
+
+                {/* 4 THICK WHITE CORNER L-BRACKET HANDLES (Matching Image 2) */}
+                {/* Top-Left */}
+                <div
+                  onMouseDown={(e) => handleCropDragStart(e, 'nw')}
+                  style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    left: '-4px',
+                    width: '20px',
+                    height: '20px',
+                    borderTop: '4px solid #ffffff',
+                    borderLeft: '4px solid #ffffff',
+                    cursor: 'nwse-resize',
+                    zIndex: 10
+                  }}
+                />
+                {/* Top-Right */}
+                <div
+                  onMouseDown={(e) => handleCropDragStart(e, 'ne')}
+                  style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    right: '-4px',
+                    width: '20px',
+                    height: '20px',
+                    borderTop: '4px solid #ffffff',
+                    borderRight: '4px solid #ffffff',
+                    cursor: 'nesw-resize',
+                    zIndex: 10
+                  }}
+                />
+                {/* Bottom-Left */}
+                <div
+                  onMouseDown={(e) => handleCropDragStart(e, 'sw')}
+                  style={{
+                    position: 'absolute',
+                    bottom: '-4px',
+                    left: '-4px',
+                    width: '20px',
+                    height: '20px',
+                    borderBottom: '4px solid #ffffff',
+                    borderLeft: '4px solid #ffffff',
+                    cursor: 'nesw-resize',
+                    zIndex: 10
+                  }}
+                />
+                {/* Bottom-Right */}
+                <div
+                  onMouseDown={(e) => handleCropDragStart(e, 'se')}
+                  style={{
+                    position: 'absolute',
+                    bottom: '-4px',
+                    right: '-4px',
+                    width: '20px',
+                    height: '20px',
+                    borderBottom: '4px solid #ffffff',
+                    borderRight: '4px solid #ffffff',
+                    cursor: 'nwse-resize',
+                    zIndex: 10
+                  }}
+                />
+
+                {/* 4 THICK WHITE EDGE CENTER BAR HANDLES (Matching Image 2) */}
+                {/* Top Edge */}
+                <div
+                  onMouseDown={(e) => handleCropDragStart(e, 'n')}
+                  style={{
+                    position: 'absolute',
+                    top: '-4px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: '28px',
+                    height: '4px',
+                    background: '#ffffff',
+                    borderRadius: '2px',
+                    cursor: 'ns-resize',
+                    zIndex: 10
+                  }}
+                />
+                {/* Bottom Edge */}
+                <div
+                  onMouseDown={(e) => handleCropDragStart(e, 's')}
+                  style={{
+                    position: 'absolute',
+                    bottom: '-4px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: '28px',
+                    height: '4px',
+                    background: '#ffffff',
+                    borderRadius: '2px',
+                    cursor: 'ns-resize',
+                    zIndex: 10
+                  }}
+                />
+                {/* Left Edge */}
+                <div
+                  onMouseDown={(e) => handleCropDragStart(e, 'w')}
+                  style={{
+                    position: 'absolute',
+                    left: '-4px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    height: '28px',
+                    width: '4px',
+                    background: '#ffffff',
+                    borderRadius: '2px',
+                    cursor: 'ew-resize',
+                    zIndex: 10
+                  }}
+                />
+                {/* Right Edge */}
+                <div
+                  onMouseDown={(e) => handleCropDragStart(e, 'e')}
+                  style={{
+                    position: 'absolute',
+                    right: '-4px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    height: '28px',
+                    width: '4px',
+                    background: '#ffffff',
+                    borderRadius: '2px',
+                    cursor: 'ew-resize',
+                    zIndex: 10
+                  }}
+                />
+
+                {/* DIMENSION PILL BADGE (Matching "240 x 151" in Image 2!) */}
+                <div style={{
+                  position: 'absolute',
+                  bottom: '8px',
+                  right: '8px',
+                  background: 'rgba(51, 65, 85, 0.95)',
+                  color: '#ffffff',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.6)',
+                  pointerEvents: 'none',
+                  letterSpacing: '0.5px'
+                }}>
+                  {Math.round(cropNaturalSize.width * (cropBox.width / 100))} x {Math.round(cropNaturalSize.height * (cropBox.height / 100))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* BOTTOM TOOLBAR (Matching Image 1: Aspect Ratio Presets & Straighten/Rotate Slider) */}
+          <div style={{
+            width: '100%',
+            maxWidth: '1200px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '10px',
+            paddingTop: '12px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+          }}>
+            {/* Aspect Ratio Preset Buttons */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <span style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', marginRight: '4px' }}>
+                Aspect Ratio:
+              </span>
+              {[
+                { label: 'Free', val: 'free' },
+                { label: 'Original', val: 'original' },
+                { label: '16:9', val: '16/9' },
+                { label: '4:3', val: '4/3' },
+                { label: '1:1 Square', val: '1/1' },
+                { label: '9:16 Reel', val: '9/16' },
+                { label: '3:2 Photo', val: '3/2' }
+              ].map(item => (
+                <button
+                  key={item.val}
+                  type="button"
+                  onClick={() => setAspectPreset(item.val)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    border: cropAspectPreset === item.val ? '1.5px solid #0284c7' : '1px solid rgba(255,255,255,0.15)',
+                    background: cropAspectPreset === item.val ? 'rgba(2, 132, 199, 0.25)' : 'rgba(255,255,255,0.05)',
+                    color: cropAspectPreset === item.val ? '#38bdf8' : '#cbd5e1',
+                    fontSize: '11.5px',
+                    fontWeight: cropAspectPreset === item.val ? 800 : 500,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Rotation / Straighten Slider (Matching Image 1 0° Wheel) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#94a3b8', fontSize: '11.5px' }}>
+              <span>Straighten / Rotate:</span>
+              <input
+                type="range"
+                min="-45"
+                max="45"
+                value={cropRotation}
+                onChange={(e) => setCropRotation(Number(e.target.value))}
+                style={{ width: '220px', accentColor: '#38bdf8', cursor: 'pointer' }}
+              />
+              <span style={{ color: '#38bdf8', fontWeight: 800, width: '30px' }}>{cropRotation}°</span>
+              {cropRotation !== 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCropRotation(0)}
+                  style={{ background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '11px', textDecoration: 'underline' }}
+                >
+                  Reset 0°
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SUB-MODAL: LIVE ARTICLE READER PREVIEW OVERLAY */}
       {showPreviewModal && (() => {
         const currentTitle = formData.title?.trim() || 'Untitled Article Headline';
@@ -6497,16 +8220,82 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                   </div>
                 </div>
 
-                {/* Lead Cover Image */}
-                {currentCoverImage ? (
-                  <div style={{ marginBottom: '28px', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
-                    <img src={currentCoverImage} alt="Article Cover" style={{ width: '100%', maxHeight: '420px', objectFit: 'cover', borderRadius: '8px' }} />
+                {/* Lead Cover Media (Image or Video) */}
+                {formData.coverMediaType === 'video' && formData.videoUrl ? (
+                  <div style={{
+                    marginBottom: '28px',
+                    width: formData.coverWidth || '100%',
+                    margin: '0 auto 28px auto',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    border: '1px solid rgba(255,255,255,0.1)'
+                  }}>
+                    {/(?:youtube\.com|youtu\.be|vimeo\.com)/i.test(formData.videoUrl) ? (
+                      <div style={{ width: '100%', height: formData.coverHeight || '380px', ...formData.coverCropStyle }}>
+                        <iframe
+                          src={formData.videoUrl.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
+                          title="Cover Video"
+                          style={{ width: '100%', height: '100%', border: 'none' }}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      </div>
+                    ) : (
+                      <video
+                        src={formData.videoUrl}
+                        controls
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        style={{
+                          width: '100%',
+                          maxHeight: formData.coverHeight === 'auto' ? 'none' : (formData.coverHeight || '420px'),
+                          objectFit: 'cover',
+                          display: 'block',
+                          borderRadius: '8px',
+                          ...formData.coverCropStyle
+                        }}
+                      />
+                    )}
+                    {formData.imageCaption && (
+                      <p style={{ fontSize: '12.5px', color: '#94a3b8', marginTop: '6px', textAlign: 'center', fontStyle: 'italic' }}>
+                        {formData.imageCaption}
+                      </p>
+                    )}
+                  </div>
+                ) : (currentCoverImage ? (
+                  <div style={{
+                    marginBottom: '28px',
+                    width: formData.coverWidth || '100%',
+                    margin: '0 auto 28px auto',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    border: '1px solid rgba(255,255,255,0.1)'
+                  }}>
+                    <img
+                      src={currentCoverImage}
+                      alt="Article Cover"
+                      style={{
+                        width: '100%',
+                        maxHeight: formData.coverHeight === 'auto' ? 'none' : (formData.coverHeight || '420px'),
+                        objectFit: 'cover',
+                        borderRadius: '8px',
+                        display: 'block',
+                        ...formData.coverCropStyle
+                      }}
+                    />
+                    {formData.imageCaption && (
+                      <p style={{ fontSize: '12.5px', color: '#94a3b8', marginTop: '6px', textAlign: 'center', fontStyle: 'italic' }}>
+                        {formData.imageCaption}
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div style={{ padding: '12px 16px', background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.15)', borderRadius: '8px', color: '#64748b', fontSize: '12px', marginBottom: '24px', textAlign: 'center' }}>
-                    📷 Cover image not uploaded yet (Optional)
+                    📷 Cover media not selected yet (Optional)
                   </div>
-                )}
+                ))}
 
                 {/* Rich Body Content with Real Live Injected Multi-Ads */}
                 {(() => {
@@ -6569,13 +8358,22 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={(e) => {
-                    setShowPreviewModal(false);
-                    handleSubmit(e);
+                    executeSaveAction(e, 'Published');
                   }}
                   className="btn btn-primary"
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontWeight: 900,
+                    opacity: isSaving ? 0.6 : 1,
+                    cursor: isSaving ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
+                  }}
                 >
-                  {articleToEdit ? "Confirm Update & Publish" : "Confirm & Publish Article"}
+                  {isSaving ? 'Publishing...' : (articleToEdit?.status === 'Published' ? "Confirm Update & Publish" : "Confirm & Publish Article")}
                 </button>
               </div>
             </div>

@@ -45,6 +45,20 @@ export async function PUT(req, { params }) {
     const isSuperAdmin = body.userRole === 'super_admin' || body.isSuperAdmin === true;
     const existing = db.articles[index];
 
+    // Mandatory Publish Validation: Article CANNOT be published without both Supertitle and Headline Title!
+    const targetStatus = body.status !== undefined ? body.status : existing.status;
+    if (targetStatus === 'Published') {
+      const finalTitle = (body.title !== undefined ? body.title : existing.title)?.trim() || '';
+      const kickerCandidate = body.kicker !== undefined ? body.kicker : (body.supertitle !== undefined ? body.supertitle : (existing.kicker || existing.supertitle || ''));
+      const finalSupertitle = (kickerCandidate || '')?.trim();
+      if (!finalTitle || !finalSupertitle) {
+        return NextResponse.json(
+          { success: false, error: 'Article cannot be published without both Supertitle (kicker) and Headline Title.' },
+          { status: 400 }
+        );
+      }
+    }
+
     // If user is not super_admin, protect and preserve the existing ad settings from modification
     const adSettings = isSuperAdmin ? {
       placeholderAdEnabled: body.placeholderAdEnabled !== undefined ? !!body.placeholderAdEnabled : (existing.placeholderAdEnabled || false),
