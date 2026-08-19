@@ -1,34 +1,32 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
+import { queryD1 } from '../../../../lib/edgeDb';
 
-function getDb() {
-  const dbPath = path.join(process.cwd(), '..', 'shared_database.json');
-  if (fs.existsSync(dbPath)) return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-  const altPath = path.join(process.cwd(), 'shared_database.json');
-  if (fs.existsSync(altPath)) return JSON.parse(fs.readFileSync(altPath, 'utf8'));
-  return { articles: [], subscribers: [], supportTickets: [] };
-}
-
-function saveDb(data) {
-  let dbPath = path.join(process.cwd(), '..', 'shared_database.json');
-  if (!fs.existsSync(path.dirname(dbPath))) {
-    dbPath = path.join(process.cwd(), 'shared_database.json');
-  }
-  fs.writeFileSync(dbPath, JSON.stringify(data, null, 2), 'utf8');
-}
+export const runtime = 'edge';
 
 export async function GET() {
-  const db = getDb();
-  return NextResponse.json({ success: true, data: db.articles || [] });
+  try {
+    const rows = await queryD1('SELECT * FROM articles ORDER BY createdAt DESC;');
+    const formatted = rows.map(r => ({
+      ...r,
+      isHero: Boolean(r.isHero),
+      isEditorsPick: Boolean(r.isEditorsPick),
+      isTrending: Boolean(r.isTrending),
+      isLive: Boolean(r.isLive),
+      placeholderAdEnabled: Boolean(r.placeholderAdEnabled),
+      adPlacements: r.adPlacements ? (typeof r.adPlacements === 'string' ? JSON.parse(r.adPlacements) : r.adPlacements) : [],
+      coverImageCrop: r.coverImageCrop ? (typeof r.coverImageCrop === 'string' ? JSON.parse(r.coverImageCrop) : r.coverImageCrop) : null,
+      coverVideoCrop: r.coverVideoCrop ? (typeof r.coverVideoCrop === 'string' ? JSON.parse(r.coverVideoCrop) : r.coverVideoCrop) : null
+    }));
+    return NextResponse.json({ success: true, data: formatted });
+  } catch (err) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
 }
 
 export async function POST(req) {
   try {
     const body = await req.json();
-    const db = getDb();
 
-    // Mandatory Publish Validation: Article CANNOT be published without both Supertitle and Headline Title!
     if (body.status === 'Published') {
       const hasTitle = !!body.title?.trim();
       const hasSupertitle = !!(body.kicker?.trim() || body.supertitle?.trim());
@@ -41,77 +39,75 @@ export async function POST(req) {
     }
 
     const supertitleVal = (body.kicker?.trim() || body.supertitle?.trim() || '');
+    const id = body.id || `art-${Date.now()}`;
+    const title = body.title || 'Untitled Article';
+    const kicker = supertitleVal;
+    const supertitle = supertitleVal;
+    const category = body.category || 'Technology';
+    const subSection = body.subSection || '';
+    const author = body.author || 'Staff Reporter';
+    const authorId = body.authorId || null;
+    const assignedEditorId = body.assignedEditorId || null;
+    const assignedEditorName = body.assignedEditorName || null;
+    const status = body.status || 'Pending Editor Assignment';
+    const summary = body.summary || '';
+    const content = body.content || '';
+    const imageUrl = body.imageUrl || '';
+    const coverMediaType = body.coverMediaType || (body.videoUrl ? 'video' : 'image');
+    const videoUrl = body.videoUrl || '';
+    const photoCaption = body.photoCaption || '';
+    const photoCredit = body.photoCredit || '';
+    const coverImageCrop = JSON.stringify(body.coverImageCrop || body.coverCropBox || {});
+    const coverVideoCrop = JSON.stringify(body.coverVideoCrop || {});
+    const coverMediaAspect = body.coverMediaAspect || '16:9';
+    const readTime = body.readTime || '3 min read';
+    const isHero = body.isHero ? 1 : 0;
+    const isEditorsPick = body.isEditorsPick ? 1 : 0;
+    const isTrending = body.isTrending ? 1 : 0;
+    const isLive = body.isLive ? 1 : 0;
+    const adPlacements = JSON.stringify(body.adPlacements || []);
+    const placeholderAdEnabled = body.placeholderAdEnabled ? 1 : 0;
+    const placeholderAdTargetUrl = body.placeholderAdTargetUrl || '';
+    const placeholderAdHeadline = body.placeholderAdHeadline || '';
+    const placeholderAdDescription = body.placeholderAdDescription || '';
+    const placeholderAdCtaText = body.placeholderAdCtaText || '';
+    const createdAt = new Date().toISOString();
+    const publishedAt = body.status === 'Published' ? new Date().toISOString() : null;
+    const updatedAt = new Date().toISOString();
 
-    const newArticle = {
-      id: body.id || `art-${Date.now()}`,
-      title: body.title || 'Untitled Article',
-      kicker: supertitleVal,
-      supertitle: supertitleVal,
-      category: body.category || 'Technology',
-      author: body.author || 'Staff Reporter',
-      authorId: body.authorId || null,
-      assignedEditorId: body.assignedEditorId || null,
-      assignedEditorName: body.assignedEditorName || null,
-      status: body.status || 'Pending Editor Assignment',
-      summary: body.summary || '',
-      content: body.content || '',
-      imageUrl: body.imageUrl || 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80',
-      coverMediaType: body.coverMediaType || (body.videoUrl ? 'video' : 'image'),
-      videoUrl: body.videoUrl || '',
-      imageCaption: body.imageCaption || '',
-      coverWidth: body.coverWidth || '100%',
-      coverHeight: body.coverHeight || '340px',
-      coverAspectRatio: body.coverAspectRatio || null,
-      coverCropBox: body.coverCropBox || null,
-      coverCropStyle: body.coverCropStyle || null,
-      featured: !!body.featured,
-      // Persistent per-article placeholder ad placement configuration
-      placeholderAdEnabled: body.userRole === 'super_admin' || body.isSuperAdmin ? !!body.placeholderAdEnabled : false,
-      placeholderAdPositionType: body.placeholderAdPositionType || 'after_paragraph',
-      placeholderAdPositionValue: body.placeholderAdPositionValue || '2',
-      placeholderAdAlignment: body.placeholderAdAlignment || 'center',
-      placeholderAdLabel: body.placeholderAdLabel || 'Advertisement',
-      placeholderAdContentType: body.placeholderAdContentType || 'placeholder',
-      placeholderAdContent: body.placeholderAdContent || null,
-      placeholderAdDropZoneId: body.placeholderAdDropZoneId || 'dropzone-p-2',
-      placeholderAdOrder: body.placeholderAdOrder !== undefined ? body.placeholderAdOrder : 2,
-      placeholderAdManualPlacement: !!body.placeholderAdManualPlacement,
-      placeholderAdCollageLayout: body.placeholderAdCollageLayout || 'grid_2x2',
-      placeholderAdCollageGap: body.placeholderAdCollageGap || '8px',
-      placeholderAdCollageRadius: body.placeholderAdCollageRadius || '12px',
-      placeholderAdCollageItems: Array.isArray(body.placeholderAdCollageItems) ? body.placeholderAdCollageItems : null,
-      // Persistent Multi-Ad Placements Array
-      adPlacements: (body.userRole === 'super_admin' || body.isSuperAdmin) && Array.isArray(body.adPlacements) 
-        ? body.adPlacements 
-        : (body.placeholderAdEnabled ? [{
-            id: `ad-place-${Date.now()}-1`,
-            enabled: true,
-            placementType: body.placeholderAdPositionType || 'after_paragraph',
-            placementValue: body.placeholderAdPositionValue || '2',
-            alignment: body.placeholderAdAlignment || 'center',
-            columnPosition: body.placeholderAdAlignment === 'left' ? 'left_col' : (body.placeholderAdAlignment === 'right' ? 'right_col' : 'full'),
-            sortOrder: 1,
-            widthMode: 'responsive_banner',
-            label: body.placeholderAdLabel || 'Advertisement',
-            contentType: body.placeholderAdContentType || 'placeholder',
-            content: body.placeholderAdContent || null,
-            collageLayout: body.placeholderAdCollageLayout || 'grid_2x2',
-            collageGap: body.placeholderAdCollageGap || '8px',
-            collageRadius: body.placeholderAdCollageRadius || '12px',
-            collageItems: body.placeholderAdCollageItems || null,
-            dropZoneId: body.placeholderAdDropZoneId || 'dropzone-p-2'
-          }] : []),
-      comments: Array.isArray(body.comments) ? body.comments : [],
-      editorFeedback: body.editorFeedback || null,
-      feedbackDate: body.feedbackDate || null,
-      publishedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+    const sql = `
+      INSERT OR REPLACE INTO articles (
+        id, title, kicker, supertitle, category, subSection, author, authorId,
+        assignedEditorId, assignedEditorName, status, summary, content, imageUrl,
+        coverMediaType, videoUrl, photoCaption, photoCredit, coverImageCrop,
+        coverVideoCrop, coverMediaAspect, readTime, isHero, isEditorsPick,
+        isTrending, isLive, adPlacements, placeholderAdEnabled,
+        placeholderAdTargetUrl, placeholderAdHeadline, placeholderAdDescription,
+        placeholderAdCtaText, createdAt, publishedAt, updatedAt
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?
+      );
+    `;
 
-    db.articles = [newArticle, ...(db.articles || [])];
-    saveDb(db);
+    const params = [
+      id, title, kicker, supertitle, category, subSection, author, authorId,
+      assignedEditorId, assignedEditorName, status, summary, content, imageUrl,
+      coverMediaType, videoUrl, photoCaption, photoCredit, coverImageCrop,
+      coverVideoCrop, coverMediaAspect, readTime, isHero, isEditorsPick,
+      isTrending, isLive, adPlacements, placeholderAdEnabled,
+      placeholderAdTargetUrl, placeholderAdHeadline, placeholderAdDescription,
+      placeholderAdCtaText, createdAt, publishedAt, updatedAt
+    ];
 
-    return NextResponse.json({ success: true, data: newArticle });
+    await queryD1(sql, params);
+
+    return NextResponse.json({ success: true, data: { id, title, status, createdAt } });
   } catch (err) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

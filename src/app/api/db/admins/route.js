@@ -1,52 +1,43 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
+import { queryD1 } from '../../../../lib/edgeDb';
 
-function getDb() {
-  const dbPath = path.join(process.cwd(), '..', 'shared_database.json');
-  if (fs.existsSync(dbPath)) return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-  const altPath = path.join(process.cwd(), 'shared_database.json');
-  if (fs.existsSync(altPath)) return JSON.parse(fs.readFileSync(altPath, 'utf8'));
-  return { articles: [], subscribers: [], supportTickets: [], adminUsers: [] };
-}
-
-function saveDb(data) {
-  let dbPath = path.join(process.cwd(), '..', 'shared_database.json');
-  if (!fs.existsSync(path.dirname(dbPath))) {
-    dbPath = path.join(process.cwd(), 'shared_database.json');
-  }
-  fs.writeFileSync(dbPath, JSON.stringify(data, null, 2), 'utf8');
-}
+export const runtime = 'edge';
 
 export async function GET() {
-  const db = getDb();
-  return NextResponse.json({ success: true, data: db.adminUsers || [] });
+  try {
+    const rows = await queryD1('SELECT * FROM admin_users ORDER BY createdAt DESC;');
+    const formatted = rows.map(r => ({
+      ...r,
+      categoryScope: r.categoryScope ? JSON.parse(r.categoryScope) : ['All Categories'],
+      sectionScope: r.sectionScope ? JSON.parse(r.sectionScope) : {},
+      actionPermissions: r.actionPermissions ? JSON.parse(r.actionPermissions) : ['manage_articles']
+    }));
+    return NextResponse.json({ success: true, data: formatted });
+  } catch (err) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
 }
 
 export async function POST(req) {
   try {
     const body = await req.json();
-    const db = getDb();
+    const id = body.id || `adm-${Date.now()}`;
+    const name = body.name || 'Staff Admin';
+    const email = body.email || `admin_${Date.now()}@dailybrief.com`;
+    const password = body.password || 'admin123';
+    const roleId = body.roleId || 'content_admin';
+    const categoryScope = JSON.stringify(body.categoryScope || ['All Categories']);
+    const sectionScope = JSON.stringify(body.sectionScope || {});
+    const actionPermissions = JSON.stringify(body.actionPermissions || ['manage_articles']);
+    const status = body.status || 'Active';
+    const createdAt = new Date().toISOString();
 
-    const newAdmin = {
-      id: body.id || `adm-${Date.now()}`,
-      name: body.name || 'Admin Staff',
-      email: body.email || '',
-      password: body.password || 'admin123',
-      roleId: body.roleId || 'content_admin',
-      categoryScope: body.categoryScope || ['All Categories'],
-      sectionScope: body.sectionScope || {},
-      actionPermissions: body.actionPermissions || ['manage_articles'],
-      status: body.status || 'Active',
-      createdAt: new Date().toISOString()
-    };
+    await queryD1(
+      `INSERT OR REPLACE INTO admin_users (id, name, email, password, roleId, categoryScope, sectionScope, actionPermissions, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      [id, name, email, password, roleId, categoryScope, sectionScope, actionPermissions, status, createdAt]
+    );
 
-    const existingAdmins = db.adminUsers || [];
-    const updatedAdmins = [newAdmin, ...existingAdmins.filter(a => a.id !== newAdmin.id)];
-    db.adminUsers = updatedAdmins;
-    saveDb(db);
-
-    return NextResponse.json({ success: true, data: newAdmin });
+    return NextResponse.json({ success: true, data: { id, name, email, roleId, status, createdAt } });
   } catch (err) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
@@ -55,29 +46,21 @@ export async function POST(req) {
 export async function PUT(req) {
   try {
     const body = await req.json();
-    const db = getDb();
+    const id = body.id;
+    const name = body.name || 'Staff Admin';
+    const email = body.email;
+    const password = body.password || 'admin123';
+    const roleId = body.roleId || 'content_admin';
+    const categoryScope = JSON.stringify(body.categoryScope || ['All Categories']);
+    const sectionScope = JSON.stringify(body.sectionScope || {});
+    const actionPermissions = JSON.stringify(body.actionPermissions || ['manage_articles']);
+    const status = body.status || 'Active';
+    const createdAt = body.createdAt || new Date().toISOString();
 
-    const existingAdmins = db.adminUsers || [];
-    const index = existingAdmins.findIndex(a => a.id === body.id || a.email === body.email);
-
-    if (index !== -1) {
-      existingAdmins[index] = { ...existingAdmins[index], ...body };
-    } else {
-      existingAdmins.unshift({
-        id: body.id || `adm-${Date.now()}`,
-        name: body.name || 'Admin Staff',
-        email: body.email || '',
-        password: body.password || 'admin123',
-        roleId: body.roleId || 'content_admin',
-        categoryScope: body.categoryScope || ['All Categories'],
-        sectionScope: body.sectionScope || {},
-        actionPermissions: body.actionPermissions || ['manage_articles'],
-        status: body.status || 'Active'
-      });
-    }
-
-    db.adminUsers = existingAdmins;
-    saveDb(db);
+    await queryD1(
+      `INSERT OR REPLACE INTO admin_users (id, name, email, password, roleId, categoryScope, sectionScope, actionPermissions, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      [id, name, email, password, roleId, categoryScope, sectionScope, actionPermissions, status, createdAt]
+    );
 
     return NextResponse.json({ success: true, data: body });
   } catch (err) {

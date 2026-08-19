@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import Modal from './Modal';
 import { useAdmin } from '../context/AdminContext';
 import { sanitizeArticleHtml } from '../lib/sanitizer';
-import { parseVideoUrl, parseMediaUrl } from '../lib/videoUtils';
+import { parseVideoUrl, parseMediaUrl, parseGoogleDriveUrl, formatCoverMediaEmbedUrl, formatCoverImageUrl, getContinuousVideoUrls } from '../lib/videoUtils';
+import ContinuousCoverVideo from './ContinuousCoverVideo';
 import { 
   Bold, 
   Italic, 
@@ -704,10 +705,14 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   // Open cropper specifically for Featured Cover Image or Cover Video
   const openCoverCropModal = (type) => {
     const isVid = type === 'video';
-    const src = isVid ? formData.videoUrl : formData.imageUrl;
+    let src = isVid ? formData.videoUrl : formData.imageUrl;
     if (!src) {
       alert(`Please upload or enter a Cover ${isVid ? 'Video' : 'Image'} first before cropping.`);
       return;
+    }
+    const gdrive = parseGoogleDriveUrl(src);
+    if (gdrive && !isVid) {
+      src = gdrive.proxyImageUrl || gdrive.thumbnailUrl || src;
     }
     setCropTarget(isVid ? 'coverVideo' : 'coverImage');
     setCropMediaType(isVid ? 'video' : 'image');
@@ -3860,27 +3865,53 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                       <input
                         type="url"
                         className="form-control"
-                        placeholder="https://images.unsplash.com/... or paste social post link (Twitter, Instagram, etc.)"
+                        placeholder="https://images.unsplash.com/... or Google Drive file/image link or social link (Twitter, Instagram, etc.)"
                         value={formData.imageUrl || ''}
-                        onChange={(e) => setFormData(prev => ({ ...prev, imageUrl: e.target.value, originalCoverImageUrl: e.target.value }))}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const gdrive = parseGoogleDriveUrl(val);
+                          if (gdrive) {
+                            setFormData(prev => ({
+                              ...prev,
+                              imageUrl: gdrive.thumbnailUrl,
+                              originalCoverImageUrl: gdrive.thumbnailUrl,
+                              imageCaption: prev.imageCaption || (gdrive.label ? `${gdrive.label}` : '')
+                            }));
+                          } else {
+                            setFormData(prev => ({ ...prev, imageUrl: val, originalCoverImageUrl: val }));
+                          }
+                        }}
                         onPaste={async (e) => {
                           const pasted = e.clipboardData?.getData('text');
-                          if (pasted && /(?:twitter\.com|x\.com|youtube\.com|youtu\.be|instagram\.com|facebook\.com|reddit\.com|pinterest\.com)/i.test(pasted) && !/\.(jpg|jpeg|png|webp|gif|svg|avif)(\?.*)?$/i.test(pasted)) {
-                            setTimeout(async () => {
-                              try {
-                                const res = await fetch('/api/extract-media-image', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ url: pasted.trim() })
-                                });
-                                const json = await res.json();
-                                if (json.success && json.imageUrl) {
-                                  setFormData(prev => ({ ...prev, imageUrl: json.imageUrl, originalCoverImageUrl: json.imageUrl }));
+                          if (pasted) {
+                            const gdrive = parseGoogleDriveUrl(pasted.trim());
+                            if (gdrive) {
+                              e.preventDefault();
+                              setFormData(prev => ({
+                                ...prev,
+                                imageUrl: gdrive.thumbnailUrl,
+                                originalCoverImageUrl: gdrive.thumbnailUrl,
+                                imageCaption: prev.imageCaption || (gdrive.label ? `${gdrive.label}` : '')
+                              }));
+                              return;
+                            }
+                            if (/(?:twitter\.com|x\.com|youtube\.com|youtu\.be|instagram\.com|facebook\.com|reddit\.com|pinterest\.com)/i.test(pasted) && !/\.(jpg|jpeg|png|webp|gif|svg|avif)(\?.*)?$/i.test(pasted)) {
+                              setTimeout(async () => {
+                                try {
+                                  const res = await fetch('/api/extract-media-image', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ url: pasted.trim() })
+                                  });
+                                  const json = await res.json();
+                                  if (json.success && json.imageUrl) {
+                                    setFormData(prev => ({ ...prev, imageUrl: json.imageUrl, originalCoverImageUrl: json.imageUrl }));
+                                  }
+                                } catch (err) {
+                                  console.warn('Cover image extract error:', err);
                                 }
-                              } catch (err) {
-                                console.warn('Cover image extract error:', err);
-                              }
-                            }, 20);
+                              }, 20);
+                            }
                           }
                         }}
                         style={{ flex: 1, background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', fontSize: '12.5px' }}
@@ -4045,6 +4076,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                       <img
                         src={formData.imageUrl}
                         alt="Article Cover Preview"
+                        referrerPolicy="no-referrer"
                         style={{
                           width: '100%',
                           height: formData.coverHeight === 'auto' ? 'auto' : (formData.coverHeight || '340px'),
@@ -4054,6 +4086,12 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                           ...formData.coverCropStyle
                         }}
                         onError={(e) => {
+                          const gdrive = parseGoogleDriveUrl(formData.imageUrl);
+                          if (gdrive && !e.currentTarget.dataset.retried) {
+                            e.currentTarget.dataset.retried = '1';
+                            e.currentTarget.src = gdrive.proxyImageUrl || `https://lh3.googleusercontent.com/d/${gdrive.fileId}`;
+                            return;
+                          }
                           e.currentTarget.src = 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80';
                         }}
                       />
@@ -4114,9 +4152,37 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                       <input
                         type="url"
                         className="form-control"
-                        placeholder="https://... direct MP4/WebM video URL or YouTube/Vimeo link"
+                        placeholder="https://... direct MP4/WebM, Google Drive video/doc/PDF link, YouTube, or Vimeo link"
                         value={formData.videoUrl || ''}
-                        onChange={(e) => setFormData(prev => ({ ...prev, videoUrl: e.target.value, originalCoverVideoUrl: e.target.value }))}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const gdrive = parseGoogleDriveUrl(val);
+                          if (gdrive) {
+                            setFormData(prev => ({
+                              ...prev,
+                              videoUrl: gdrive.previewUrl,
+                              originalCoverVideoUrl: gdrive.previewUrl,
+                              imageCaption: prev.imageCaption || (gdrive.label ? `${gdrive.label}` : '')
+                            }));
+                          } else {
+                            setFormData(prev => ({ ...prev, videoUrl: val, originalCoverVideoUrl: val }));
+                          }
+                        }}
+                        onPaste={(e) => {
+                          const pasted = e.clipboardData?.getData('text');
+                          if (pasted) {
+                            const gdrive = parseGoogleDriveUrl(pasted.trim());
+                            if (gdrive) {
+                              e.preventDefault();
+                              setFormData(prev => ({
+                                ...prev,
+                                videoUrl: gdrive.previewUrl,
+                                originalCoverVideoUrl: gdrive.previewUrl,
+                                imageCaption: prev.imageCaption || (gdrive.label ? `${gdrive.label}` : '')
+                              }));
+                            }
+                          }
+                        }}
                         style={{ flex: 1, background: '#1e293b', border: '1px solid rgba(255,255,255,0.15)', fontSize: '12.5px' }}
                       />
                       {formData.videoUrl && (
@@ -4269,39 +4335,19 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                       border: '1px solid rgba(255,255,255,0.15)',
                       maxHeight: formData.coverHeight === 'auto' ? 'none' : (formData.coverHeight || '340px'),
                       background: '#000000',
-                      position: 'relative',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
+                      position: 'relative'
                     }}>
-                      {/(?:youtube\.com|youtu\.be|vimeo\.com)/i.test(formData.videoUrl) ? (
-                        <div style={{ width: '100%', height: formData.coverHeight || '340px', ...formData.coverCropStyle }}>
-                          <iframe
-                            src={formData.videoUrl.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
-                            title="Cover Video"
-                            style={{ width: '100%', height: '100%', border: 'none' }}
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                          />
-                        </div>
-                      ) : (
-                        <video
+                      <div style={{ width: '100%', height: formData.coverHeight === 'auto' ? '340px' : (formData.coverHeight || '340px') }}>
+                        <ContinuousCoverVideo
                           src={formData.videoUrl}
-                          controls
-                          autoPlay
-                          muted
-                          loop
-                          playsInline
-                          style={{
-                            width: '100%',
-                            height: formData.coverHeight === 'auto' ? 'auto' : (formData.coverHeight || '340px'),
-                            maxHeight: formData.coverHeight === 'auto' ? 'none' : (formData.coverHeight || '340px'),
-                            objectFit: 'cover',
-                            display: 'block',
-                            ...formData.coverCropStyle
-                          }}
+                          cropStyle={formData.coverCropStyle}
+                          autoPlay={true}
+                          muted={true}
+                          loop={true}
+                          controls={true}
+                          playsInline={true}
                         />
-                      )}
+                      </div>
                       <div style={{
                         position: 'absolute',
                         bottom: '8px',
@@ -4317,10 +4363,9 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                         alignItems: 'center',
                         gap: '6px'
                       }}>
-                        <span>🎬 Cover Video Active</span>
+                        <span>🎬 Cover Media / Drive Active</span>
                         <span>•</span>
                         <span>{formData.coverWidth || '100%'} W</span>
-                        {formData.coverCropBox && <span>• ✂️ Cropped</span>}
                       </div>
                     </div>
                   )}
@@ -7774,10 +7819,18 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 <img
                   src={cropMediaSrc}
                   alt="Crop Target"
+                  referrerPolicy="no-referrer"
                   onLoad={(e) => {
                     const img = e.currentTarget;
                     if (img.naturalWidth && img.naturalHeight) {
                       setCropNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+                    }
+                  }}
+                  onError={(e) => {
+                    const gdrive = parseGoogleDriveUrl(cropMediaSrc);
+                    if (gdrive && !e.currentTarget.dataset.retried) {
+                      e.currentTarget.dataset.retried = '1';
+                      e.currentTarget.src = gdrive.proxyImageUrl || `https://lh3.googleusercontent.com/d/${gdrive.fileId}`;
                     }
                   }}
                   style={{
@@ -8230,34 +8283,17 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                     overflow: 'hidden',
                     border: '1px solid rgba(255,255,255,0.1)'
                   }}>
-                    {/(?:youtube\.com|youtu\.be|vimeo\.com)/i.test(formData.videoUrl) ? (
-                      <div style={{ width: '100%', height: formData.coverHeight || '380px', ...formData.coverCropStyle }}>
-                        <iframe
-                          src={formData.videoUrl.replace('watch?v=', 'embed/').replace('youtu.be/', 'youtube.com/embed/')}
-                          title="Cover Video"
-                          style={{ width: '100%', height: '100%', border: 'none' }}
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        />
-                      </div>
-                    ) : (
-                      <video
+                    <div style={{ width: '100%', height: formData.coverHeight === 'auto' ? '380px' : (formData.coverHeight || '380px') }}>
+                      <ContinuousCoverVideo
                         src={formData.videoUrl}
-                        controls
-                        autoPlay
-                        muted
-                        loop
-                        playsInline
-                        style={{
-                          width: '100%',
-                          maxHeight: formData.coverHeight === 'auto' ? 'none' : (formData.coverHeight || '420px'),
-                          objectFit: 'cover',
-                          display: 'block',
-                          borderRadius: '8px',
-                          ...formData.coverCropStyle
-                        }}
+                        cropStyle={formData.coverCropStyle}
+                        autoPlay={true}
+                        muted={true}
+                        loop={true}
+                        controls={true}
+                        playsInline={true}
                       />
-                    )}
+                    </div>
                     {formData.imageCaption && (
                       <p style={{ fontSize: '12.5px', color: '#94a3b8', marginTop: '6px', textAlign: 'center', fontStyle: 'italic' }}>
                         {formData.imageCaption}
@@ -8274,8 +8310,9 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                     border: '1px solid rgba(255,255,255,0.1)'
                   }}>
                     <img
-                      src={currentCoverImage}
+                      src={formatCoverImageUrl(currentCoverImage)}
                       alt="Article Cover"
+                      referrerPolicy="no-referrer"
                       style={{
                         width: '100%',
                         maxHeight: formData.coverHeight === 'auto' ? 'none' : (formData.coverHeight || '420px'),
@@ -8283,6 +8320,15 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                         borderRadius: '8px',
                         display: 'block',
                         ...formData.coverCropStyle
+                      }}
+                      onError={(e) => {
+                        const gdrive = parseGoogleDriveUrl(currentCoverImage);
+                        if (gdrive && !e.currentTarget.dataset.retried) {
+                          e.currentTarget.dataset.retried = '1';
+                          e.currentTarget.src = gdrive.proxyImageUrl || `https://lh3.googleusercontent.com/d/${gdrive.fileId}`;
+                          return;
+                        }
+                        e.currentTarget.src = 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=1200&q=80';
                       }}
                     />
                     {formData.imageCaption && (

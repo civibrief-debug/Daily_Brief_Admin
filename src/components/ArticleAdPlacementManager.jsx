@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   GripVertical, 
   Move, 
@@ -26,8 +26,31 @@ import {
   LayoutGrid,
   Layers,
   Upload,
-  MousePointerClick
+  MousePointerClick,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
+import ContinuousCoverVideo from './ContinuousCoverVideo';
+
+// Helper to extract embed video URL (YouTube, Vimeo, etc.) with zero controls & continuous loop
+export const parseVideoEmbedUrl = (rawUrl) => {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  const cleanUrl = rawUrl.trim();
+
+  // YouTube - Silent Looping Background Video (No play/pause buttons, no controls, no branding)
+  const ytMatch = cleanUrl.match(/(?:youtube(?:-nocookie)?\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?|shorts)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+  if (ytMatch && ytMatch[1]) {
+    return `https://www.youtube-nocookie.com/embed/${ytMatch[1]}?autoplay=1&mute=1&loop=1&playlist=${ytMatch[1]}&controls=0&modestbranding=1&rel=0&showinfo=0&iv_load_policy=3&disablekb=1&playsinline=1&enablejsapi=1&fs=0&color=white&autohide=1`;
+  }
+
+  // Vimeo - Silent Looping Background Video (No controls)
+  const vimeoMatch = cleanUrl.match(/(?:vimeo\.com\/(?:channels\/(?:\w+\/)?|groups\/[^\/]*\/videos\/|album\/\d+\/video\/|video\/|)(\d+))/i) || cleanUrl.match(/player\.vimeo\.com\/video\/(\d+)/i);
+  if (vimeoMatch && vimeoMatch[1]) {
+    return `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1&muted=1&loop=1&background=1&controls=0&autopause=0`;
+  }
+
+  return null;
+};
 
 export const DEFAULT_COLLAGE_ITEMS = [
   {
@@ -173,6 +196,30 @@ export default function ArticleAdPlacementManager({
   const [dragOverZoneId, setDragOverZoneId] = useState(null);
   const [viewMode, setViewMode] = useState('canvas'); // 'canvas' | 'live_article' | 'mobile'
   const [showPresetDropdown, setShowPresetDropdown] = useState(false);
+  const [studioMuted, setStudioMuted] = useState(true);
+  const studioIframeRef = useRef(null);
+
+  const toggleStudioMute = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const nextMuted = !studioMuted;
+    setStudioMuted(nextMuted);
+
+    if (studioIframeRef.current && studioIframeRef.current.contentWindow) {
+      try {
+        if (nextMuted) {
+          studioIframeRef.current.contentWindow.postMessage('{"event":"command","func":"mute","args":""}', '*');
+          studioIframeRef.current.contentWindow.postMessage('{"method":"setMuted","value":true}', '*');
+        } else {
+          studioIframeRef.current.contentWindow.postMessage('{"event":"command","func":"unMute","args":""}', '*');
+          studioIframeRef.current.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+          studioIframeRef.current.contentWindow.postMessage('{"method":"setMuted","value":false}', '*');
+          studioIframeRef.current.contentWindow.postMessage('{"method":"setVolume","value":1}', '*');
+          studioIframeRef.current.contentWindow.postMessage('{"method":"play"}', '*');
+        }
+      } catch (err) {}
+    }
+  };
 
   if (!isSuperAdmin) {
     return (
@@ -211,7 +258,7 @@ export default function ArticleAdPlacementManager({
         content: formData.placeholderAdContent || '',
         targetUrl: formData.placeholderAdTargetUrl || '',
         headline: formData.placeholderAdHeadline || 'Premium Partner Showcase',
-        description: formData.placeholderAdDescription || 'Discover exclusive offers and services from our verified partners.',
+        description: formData.placeholderAdDescription !== undefined ? formData.placeholderAdDescription : '',
         ctaText: formData.placeholderAdCtaText || 'Learn More ↗',
         videoAutoplay: formData.placeholderAdVideoAutoplay ?? true,
         videoLoop: formData.placeholderAdVideoLoop ?? true,
@@ -279,7 +326,7 @@ export default function ArticleAdPlacementManager({
       collageItems: DEFAULT_COLLAGE_ITEMS,
       targetUrl: 'https://example.com/sponsor',
       headline: `Multi-Frame Partner Showcase #${newIndex}`,
-      description: 'Explore our visual story series and featured collections.',
+      description: '',
       ctaText: 'Explore Series ↗',
       videoAutoplay: true,
       videoLoop: true,
@@ -381,19 +428,25 @@ export default function ArticleAdPlacementManager({
     handleUpdateAdField(adId, 'collageItems', DEFAULT_COLLAGE_ITEMS);
   };
 
-  // Update a single field on a specific ad
-  const handleUpdateAdField = (adId, field, value) => {
-    const updated = adPlacements.map(ad => {
+  // Update multiple fields on a specific ad atomically
+  const handleUpdateAdFields = (adId, fieldsObject) => {
+    const currentList = Array.isArray(adPlacements) && adPlacements.length > 0 ? adPlacements : [];
+    const updated = currentList.map(ad => {
       if (ad.id === adId) {
-        const updatedAd = { ...ad, [field]: value };
-        if (field === 'alignment') {
-          updatedAd.columnPosition = value === 'left' ? 'left_col' : (value === 'right' ? 'right_col' : 'full');
+        const updatedAd = { ...ad, ...fieldsObject };
+        if (fieldsObject.alignment) {
+          updatedAd.columnPosition = fieldsObject.alignment === 'left' ? 'left_col' : (fieldsObject.alignment === 'right' ? 'right_col' : 'full');
         }
         return updatedAd;
       }
       return ad;
     });
     updateAdPlacements(updated);
+  };
+
+  // Update a single field on a specific ad
+  const handleUpdateAdField = (adId, field, value) => {
+    handleUpdateAdFields(adId, { [field]: value });
   };
 
   // Helper to extract embed video URL (YouTube, Vimeo, etc.)
@@ -1052,11 +1105,14 @@ export default function ArticleAdPlacementManager({
                 </label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input
-                    type="url"
-                    value={currentAd.targetUrl || currentAd.linkUrl || ''}
+                    type="text"
+                    value={currentAd.targetUrl !== undefined ? currentAd.targetUrl : (currentAd.linkUrl !== undefined ? currentAd.linkUrl : '')}
                     onChange={(e) => {
-                      handleUpdateAdField(currentAd.id, 'targetUrl', e.target.value);
-                      handleUpdateAdField(currentAd.id, 'linkUrl', e.target.value);
+                      const val = e.target.value;
+                      handleUpdateAdFields(currentAd.id, {
+                        targetUrl: val,
+                        linkUrl: val
+                      });
                     }}
                     placeholder="https://sponsor.com/landing-page (Clicking anywhere on this ad redirects readers here)"
                     style={{
@@ -1068,7 +1124,8 @@ export default function ArticleAdPlacementManager({
                       color: '#38bdf8',
                       fontSize: '13px',
                       fontWeight: 700,
-                      outline: 'none'
+                      outline: 'none',
+                      boxSizing: 'border-box'
                     }}
                   />
                   {(currentAd.targetUrl || currentAd.linkUrl) && (
@@ -1245,27 +1302,72 @@ export default function ArticleAdPlacementManager({
                   {/* Live Video Preview in Studio Panel */}
                   {currentAd.content && (
                     <div style={{ borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)', position: 'relative', background: '#000', maxHeight: '280px' }}>
+                      {/* Floating Volume / Mute Toggle Button */}
+                      <button
+                        type="button"
+                        onClick={toggleStudioMute}
+                        style={{
+                          position: 'absolute',
+                          top: '8px',
+                          right: '8px',
+                          zIndex: 20,
+                          background: 'rgba(9, 13, 22, 0.85)',
+                          backdropFilter: 'blur(8px)',
+                          border: '1px solid rgba(255, 255, 255, 0.3)',
+                          borderRadius: '50%',
+                          width: '32px',
+                          height: '32px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: studioMuted ? '#cbd5e1' : '#38bdf8',
+                          cursor: 'pointer',
+                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.7)',
+                          transition: 'all 0.2s ease',
+                          pointerEvents: 'auto'
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.1)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                        title={studioMuted ? "Click to Unmute" : "Click to Mute"}
+                      >
+                        {studioMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                      </button>
+
                       {parseVideoEmbedUrl(currentAd.content) ? (
-                        <iframe
-                          src={parseVideoEmbedUrl(currentAd.content)}
-                          title="Ad Video Preview"
-                          style={{ width: '100%', height: '220px', border: 'none', display: 'block' }}
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        />
+                        <div style={{ position: 'relative', width: '100%', height: '220px', overflow: 'hidden', background: '#000' }}>
+                          <iframe
+                            ref={studioIframeRef}
+                            src={parseVideoEmbedUrl(currentAd.content)}
+                            title="Ad Video Preview"
+                            style={{
+                              position: 'absolute',
+                              top: '50%',
+                              left: '50%',
+                              width: '145%',
+                              height: '145%',
+                              transform: 'translate(-50%, -50%)',
+                              border: 'none',
+                              display: 'block',
+                              pointerEvents: 'none'
+                            }}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          />
+                        </div>
                       ) : (
-                        <video
-                          src={currentAd.content}
-                          controls={currentAd.videoControls ?? true}
-                          autoPlay={currentAd.videoAutoplay ?? true}
-                          loop={currentAd.videoLoop ?? true}
-                          muted={currentAd.videoMuted ?? true}
-                          playsInline
-                          style={{ width: '100%', maxHeight: '220px', objectFit: 'contain', display: 'block' }}
-                        />
+                        <div style={{ width: '100%', height: '220px' }}>
+                          <ContinuousCoverVideo
+                            src={currentAd.content}
+                            controls={false}
+                            autoPlay={true}
+                            loop={true}
+                            muted={studioMuted}
+                            playsInline={true}
+                            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                          />
+                        </div>
                       )}
-                      <span style={{ position: 'absolute', bottom: '6px', right: '6px', background: 'rgba(0,0,0,0.85)', color: '#f87171', fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(239,68,68,0.4)' }}>
-                        🎥 Live Online Video Embed Preview
+                      <span style={{ position: 'absolute', bottom: '6px', right: '6px', background: 'rgba(0,0,0,0.85)', color: '#f87171', fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(239,68,68,0.4)', pointerEvents: 'none' }}>
+                        🎥 Continuous Looping Video Ad
                       </span>
                     </div>
                   )}
@@ -2610,24 +2712,68 @@ export default function ArticleAdPlacementManager({
           </div>
         ) : ad.contentType === 'video' && ad.content ? (
           <div style={{ borderRadius: '8px', overflow: 'hidden', position: 'relative', background: '#000' }}>
+            {/* Floating Volume / Mute Toggle Button */}
+            <button
+              type="button"
+              onClick={toggleStudioMute}
+              style={{
+                position: 'absolute',
+                top: '8px',
+                right: '8px',
+                zIndex: 20,
+                background: 'rgba(9, 13, 22, 0.85)',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                borderRadius: '50%',
+                width: '32px',
+                height: '32px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: studioMuted ? '#cbd5e1' : '#38bdf8',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.7)',
+                transition: 'all 0.2s ease',
+                pointerEvents: 'auto'
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.1)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+              title={studioMuted ? "Click to Unmute" : "Click to Mute"}
+            >
+              {studioMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+            </button>
+
             {videoEmbed ? (
-              <iframe
-                src={videoEmbed}
-                title={ad.label || 'Video Ad'}
-                style={{ width: '100%', height: '240px', border: 'none', display: 'block' }}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
+              <div style={{ position: 'relative', width: '100%', height: '240px', overflow: 'hidden', background: '#000' }}>
+                <iframe
+                  src={videoEmbed}
+                  title={ad.label || 'Video Ad'}
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    width: '145%',
+                    height: '145%',
+                    transform: 'translate(-50%, -50%)',
+                    border: 'none',
+                    display: 'block',
+                    pointerEvents: 'none'
+                  }}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                />
+              </div>
             ) : (
-              <video
-                src={ad.content}
-                controls={ad.videoControls ?? true}
-                autoPlay={ad.videoAutoplay ?? true}
-                loop={ad.videoLoop ?? true}
-                muted={ad.videoMuted ?? true}
-                playsInline
-                style={{ width: '100%', maxHeight: '240px', objectFit: 'contain', display: 'block' }}
-              />
+              <div style={{ width: '100%', height: '240px' }}>
+                <ContinuousCoverVideo
+                  src={ad.content}
+                  controls={false}
+                  autoPlay={true}
+                  loop={true}
+                  muted={studioMuted}
+                  playsInline={true}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                />
+              </div>
             )}
 
             {/* Video Footer Banner with Info & Click Redirection Badge */}
