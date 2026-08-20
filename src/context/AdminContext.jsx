@@ -62,39 +62,36 @@ export function AdminProvider({ children }) {
     });
   };
 
-  // Sync auth state & admin users from localStorage & D1 on load
+  // Sync auth state & admin users from verified session & D1 on load
   useEffect(() => {
     const savedTheme = localStorage.getItem('db_admin_theme') || 'dark';
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
 
-    const savedUserStr = localStorage.getItem('db_admin_user');
-    if (savedUserStr) {
+    // Purge any legacy unverified auto-saved sessions from previous versions
+    if (localStorage.getItem('db_admin_user')) {
+      localStorage.removeItem('db_admin_user');
+    }
+
+    const savedSessionStr = localStorage.getItem('db_admin_session_v2');
+    if (savedSessionStr) {
       try {
-        const savedUser = JSON.parse(savedUserStr);
-        if (savedUser && savedUser.id) {
-          if (savedUser.roleId === 'super_admin' && savedUser.id === 'super-admin-root') {
-            const normalized = {
-              ...DEFAULT_SUPER_ADMIN,
-              name: 'Super Admin',
-              email: 'admin@dailybrief.com'
-            };
-            setCurrentUser(normalized);
-          } else {
-            setCurrentUser(savedUser);
-          }
+        const savedSession = JSON.parse(savedSessionStr);
+        if (savedSession && savedSession.id && savedSession.authSessionId && savedSession.roleId) {
+          setCurrentUser(savedSession);
         } else {
           setCurrentUser(null);
-          localStorage.removeItem('db_admin_user');
+          localStorage.removeItem('db_admin_session_v2');
         }
       } catch (err) {
-        console.error("Failed to parse saved admin user", err);
+        console.error("Failed to parse saved session", err);
         setCurrentUser(null);
-        localStorage.removeItem('db_admin_user');
+        localStorage.removeItem('db_admin_session_v2');
       }
     } else {
       setCurrentUser(null);
     }
+
 
     const savedAdminsStr = localStorage.getItem('db_admin_users');
     if (savedAdminsStr) {
@@ -192,10 +189,13 @@ export function AdminProvider({ children }) {
       const userSession = {
         ...DEFAULT_SUPER_ADMIN,
         name: 'Super Admin',
-        email: 'admin@dailybrief.com'
+        email: 'admin@dailybrief.com',
+        authSessionId: `sess_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        authenticatedAt: new Date().toISOString()
       };
       setCurrentUser(userSession);
-      localStorage.setItem('db_admin_user', JSON.stringify(userSession));
+      localStorage.setItem('db_admin_session_v2', JSON.stringify(userSession));
+      localStorage.removeItem('db_admin_user');
       showToast(`Welcome back, Super Admin`, "success");
       return { success: true, user: userSession };
     }
@@ -232,11 +232,14 @@ export function AdminProvider({ children }) {
         roleId: matchAdmin.roleId,
         categoryScope: matchAdmin.categoryScope || ['All Categories'],
         sectionScope: matchAdmin.sectionScope || {},
-        actionPermissions: matchAdmin.actionPermissions || ['manage_articles']
+        actionPermissions: matchAdmin.actionPermissions || ['manage_articles'],
+        authSessionId: `sess_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        authenticatedAt: new Date().toISOString()
       };
 
       setCurrentUser(userSession);
-      localStorage.setItem('db_admin_user', JSON.stringify(userSession));
+      localStorage.setItem('db_admin_session_v2', JSON.stringify(userSession));
+      localStorage.removeItem('db_admin_user');
       const roleDef = INITIAL_ROLE_DEFINITIONS.find(r => r.id === userSession.roleId);
       showToast(`Welcome back, ${userSession.name} (${roleDef?.name || userSession.roleId})`, "success");
       return { success: true, user: userSession };
@@ -248,6 +251,7 @@ export function AdminProvider({ children }) {
 
   // Fast Role Switcher helper for live role testing
   const switchRole = (newRoleId) => {
+    if (!currentUser) return;
     const roleNames = {
       super_admin: 'Super Admin',
       editor: 'John Editor',
@@ -256,21 +260,23 @@ export function AdminProvider({ children }) {
       support_admin: 'Support Admin'
     };
     const updated = {
-      ...(currentUser || DEFAULT_SUPER_ADMIN),
+      ...currentUser,
       roleId: newRoleId,
       name: roleNames[newRoleId] || currentUser?.name || 'Admin User'
     };
     setCurrentUser(updated);
-    localStorage.setItem('db_admin_user', JSON.stringify(updated));
+    localStorage.setItem('db_admin_session_v2', JSON.stringify(updated));
     showToast(`Switched active role scope to ${INITIAL_ROLE_DEFINITIONS.find(r => r.id === newRoleId)?.name || newRoleId}`, "info");
   };
 
   // Logout Function
   const logout = () => {
     setCurrentUser(null);
+    localStorage.removeItem('db_admin_session_v2');
     localStorage.removeItem('db_admin_user');
     showToast("Logged out of Command Center.", "info");
   };
+
 
   // Helper permission check
   const hasPermission = (permission) => {

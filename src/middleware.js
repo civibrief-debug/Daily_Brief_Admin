@@ -13,12 +13,12 @@ export function middleware(request) {
   const method = request.method;
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     const origin = request.headers.get('origin');
-    const host = request.headers.get('host');
+    const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
 
-    if (origin) {
+    if (origin && host) {
       try {
         const originHost = new URL(origin).host;
-        if (originHost !== host) {
+        if (originHost !== host && !originHost.endsWith(host) && !host.endsWith(originHost)) {
           return new NextResponse(
             JSON.stringify({ success: false, error: 'CSRF Origin mismatch rejected' }),
             { status: 403, headers: { 'Content-Type': 'application/json' } }
