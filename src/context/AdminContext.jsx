@@ -420,8 +420,9 @@ export function AdminProvider({ children }) {
           senderRole
         })
       });
-      const data = await res.json();
-      if (data.success && Array.isArray(data.comments)) {
+      if (!res.ok) return null;
+      const data = await res.json().catch(() => null);
+      if (data && data.success && Array.isArray(data.comments)) {
         setArticles(prev => prev.map(a => a.id === articleId ? { ...a, comments: data.comments } : a));
         showToast("Message sent to discussion thread.", "success");
         return data.comments;
@@ -445,12 +446,13 @@ export function AdminProvider({ children }) {
           readerId: currentUser.id
         })
       });
-      const data = await res.json();
-      if (data.success && Array.isArray(data.comments)) {
+      if (!res.ok) return;
+      const data = await res.json().catch(() => null);
+      if (data && data.success && Array.isArray(data.comments)) {
         setArticles(prev => prev.map(a => a.id === articleId ? { ...a, comments: data.comments } : a));
       }
     } catch (err) {
-      console.error("Failed to mark comments as read", err);
+      console.warn("Failed to mark comments as read (suppressed):", err?.message || err);
     }
   };
 
@@ -459,7 +461,7 @@ export function AdminProvider({ children }) {
     try {
       const res = await fetch(`/api/db/articles/${articleId}/comments`);
       if (!res.ok) return [];
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (data && data.success && Array.isArray(data.comments)) {
         setArticles(prev => prev.map(a => a.id === articleId ? { ...a, comments: data.comments } : a));
         return data.comments;
@@ -469,6 +471,7 @@ export function AdminProvider({ children }) {
     }
     return [];
   };
+
 
   // Workflow Action 4: Editor Approves Quality (Option 2)
   const approveArticleByEditor = async (articleId) => {
