@@ -29,6 +29,142 @@ export async function GET(req, { params }) {
   }
 }
 
+export async function PUT(req, { params }) {
+  try {
+    const { id } = await params;
+    const body = await req.json();
+
+    if (body.status === 'Published') {
+      const hasTitle = !!body.title?.trim();
+      const hasSupertitle = !!(body.kicker?.trim() || body.supertitle?.trim());
+      if (!hasTitle || !hasSupertitle) {
+        return NextResponse.json(
+          { success: false, error: 'Article cannot be published without both Supertitle (kicker) and Headline Title.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const supertitleVal = (body.kicker?.trim() || body.supertitle?.trim() || '');
+    const title = body.title || 'Untitled Article';
+    const kicker = supertitleVal;
+    const supertitle = supertitleVal;
+    const category = body.category || 'Technology';
+    const subSection = body.subSection || '';
+    const author = body.author || 'Staff Reporter';
+    const authorId = body.authorId || null;
+    const assignedEditorId = body.assignedEditorId || null;
+    const assignedEditorName = body.assignedEditorName || null;
+    const status = body.status || 'Draft';
+    const summary = body.summary || '';
+    const content = body.content || '';
+    const imageUrl = body.imageUrl || '';
+    const coverMediaType = body.coverMediaType || (body.videoUrl ? 'video' : 'image');
+    const videoUrl = body.videoUrl || '';
+    const photoCaption = body.photoCaption || '';
+    const photoCredit = body.photoCredit || '';
+    const coverImageCrop = JSON.stringify(body.coverImageCrop || body.coverCropBox || {});
+    const coverVideoCrop = JSON.stringify(body.coverVideoCrop || {});
+    const coverMediaAspect = body.coverMediaAspect || '16:9';
+    const readTime = body.readTime || '3 min read';
+    const isHero = body.isHero ? 1 : 0;
+    const isEditorsPick = body.isEditorsPick ? 1 : 0;
+    const isTrending = body.isTrending ? 1 : 0;
+    const isLive = body.isLive ? 1 : 0;
+    const adPlacements = JSON.stringify(body.adPlacements || []);
+    const placeholderAdEnabled = body.placeholderAdEnabled ? 1 : 0;
+    const placeholderAdTargetUrl = body.placeholderAdTargetUrl || '';
+    const placeholderAdHeadline = body.placeholderAdHeadline || '';
+    const placeholderAdDescription = body.placeholderAdDescription || '';
+    const placeholderAdCtaText = body.placeholderAdCtaText || '';
+    const comments = JSON.stringify(body.comments || []);
+    const editorFeedback = body.editorFeedback || null;
+    const feedbackDate = body.feedbackDate || null;
+    const publishedAt = body.status === 'Published' ? (body.publishedAt || new Date().toISOString()) : (body.publishedAt || null);
+    const updatedAt = new Date().toISOString();
+
+    const sql = `
+      INSERT OR REPLACE INTO articles (
+        id, title, kicker, supertitle, category, subSection, author, authorId,
+        assignedEditorId, assignedEditorName, status, summary, content, imageUrl,
+        coverMediaType, videoUrl, photoCaption, photoCredit, coverImageCrop,
+        coverVideoCrop, coverMediaAspect, readTime, isHero, isEditorsPick,
+        isTrending, isLive, adPlacements, placeholderAdEnabled,
+        placeholderAdTargetUrl, placeholderAdHeadline, placeholderAdDescription,
+        placeholderAdCtaText, comments, editorFeedback, feedbackDate,
+        createdAt, publishedAt, updatedAt
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?,
+        COALESCE((SELECT createdAt FROM articles WHERE id = ?), ?), ?, ?
+      );
+    `;
+
+    const paramsList = [
+      id, title, kicker, supertitle, category, subSection, author, authorId,
+      assignedEditorId, assignedEditorName, status, summary, content, imageUrl,
+      coverMediaType, videoUrl, photoCaption, photoCredit, coverImageCrop,
+      coverVideoCrop, coverMediaAspect, readTime, isHero, isEditorsPick,
+      isTrending, isLive, adPlacements, placeholderAdEnabled,
+      placeholderAdTargetUrl, placeholderAdHeadline, placeholderAdDescription,
+      placeholderAdCtaText, comments, editorFeedback, feedbackDate,
+      id, updatedAt, publishedAt, updatedAt
+    ];
+
+    await queryD1(sql, paramsList);
+
+    const updatedFormatted = {
+      ...body,
+      id,
+      title,
+      kicker,
+      supertitle,
+      category,
+      subSection,
+      author,
+      authorId,
+      assignedEditorId,
+      assignedEditorName,
+      status,
+      summary,
+      content,
+      imageUrl,
+      coverMediaType,
+      videoUrl,
+      photoCaption,
+      photoCredit,
+      coverImageCrop: body.coverImageCrop || {},
+      coverVideoCrop: body.coverVideoCrop || {},
+      coverMediaAspect,
+      readTime,
+      isHero: Boolean(isHero),
+      isEditorsPick: Boolean(isEditorsPick),
+      isTrending: Boolean(isTrending),
+      isLive: Boolean(isLive),
+      adPlacements: body.adPlacements || [],
+      placeholderAdEnabled: Boolean(placeholderAdEnabled),
+      placeholderAdTargetUrl,
+      placeholderAdHeadline,
+      placeholderAdDescription,
+      placeholderAdCtaText,
+      comments: body.comments || [],
+      editorFeedback,
+      feedbackDate,
+      publishedAt,
+      updatedAt
+    };
+
+    return NextResponse.json({ success: true, data: updatedFormatted });
+  } catch (err) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
 export async function DELETE(req, { params }) {
   try {
     const { id } = await params;
@@ -38,3 +174,4 @@ export async function DELETE(req, { params }) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
+

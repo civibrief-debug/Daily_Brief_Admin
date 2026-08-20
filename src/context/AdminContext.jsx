@@ -305,11 +305,15 @@ export function AdminProvider({ children }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const json = await res.json();
-      if (json.success) {
+      const json = await res.json().catch(() => null);
+      if (res.ok && json && json.success) {
         setArticles(prev => [json.data, ...prev]);
-        showToast(`Article "${json.data.title}" saved & synced live.`, "success");
+        showToast(`Article "${json.data.title || 'Draft'}" saved & synced live.`, "success");
         return json.data;
+      } else {
+        const errorMsg = json?.error || `Server responded with status ${res.status}`;
+        console.error('Failed to add article:', errorMsg);
+        showToast(`Error saving article: ${errorMsg}`, "error");
       }
     } catch (err) {
       console.error('Failed to add article:', err);
@@ -324,10 +328,15 @@ export function AdminProvider({ children }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
       });
-      const json = await res.json();
-      if (json.success) {
-        setArticles(prev => prev.map(art => art.id === updated.id ? json.data : art));
+      const json = await res.json().catch(() => null);
+      if (res.ok && json && json.success) {
+        setArticles(prev => prev.map(art => art.id === updated.id ? (json.data || updated) : art));
         showToast(`Article updated live.`, "success");
+        return json.data;
+      } else {
+        const errorMsg = json?.error || `Server responded with status ${res.status}`;
+        console.error('Failed to update article:', errorMsg);
+        showToast(`Error updating article: ${errorMsg}`, "error");
       }
     } catch (err) {
       console.error('Failed to update article:', err);
@@ -338,10 +347,14 @@ export function AdminProvider({ children }) {
   const deleteArticle = async (id) => {
     try {
       const res = await fetch(`/api/db/articles/${id}`, { method: 'DELETE' });
-      const json = await res.json();
-      if (json.success) {
+      const json = await res.json().catch(() => null);
+      if (res.ok && json && json.success) {
         setArticles(prev => prev.filter(art => art.id !== id));
         showToast("Article deleted from catalog.", "warning");
+      } else {
+        const errorMsg = json?.error || `Server responded with status ${res.status}`;
+        console.error('Failed to delete article:', errorMsg);
+        showToast(`Error deleting article: ${errorMsg}`, "error");
       }
     } catch (err) {
       console.error('Failed to delete article:', err);
@@ -353,6 +366,7 @@ export function AdminProvider({ children }) {
     const target = articles.find(a => a.id === id);
     if (!target) return;
     await updateArticle({ ...target, status: newStatus });
+
   };
 
   // Workflow Action 1: Author Submits Article For Editorial Review

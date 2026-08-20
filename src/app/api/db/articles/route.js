@@ -5,8 +5,9 @@ export const runtime = 'edge';
 
 export async function GET() {
   try {
-    const rows = await queryD1('SELECT * FROM articles ORDER BY createdAt DESC;');
+    const rows = await queryD1('SELECT * FROM articles ORDER BY COALESCE(updatedAt, createdAt) DESC, createdAt DESC;');
     const formatted = rows.map(r => ({
+
       ...r,
       isHero: Boolean(r.isHero),
       isEditorsPick: Boolean(r.isEditorsPick),
