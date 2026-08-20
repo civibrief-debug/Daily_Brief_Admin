@@ -469,66 +469,105 @@ export default function ArticleAdPlacementManager({
     return null;
   };
 
-  // Parse actual article HTML into structured preview segments
+  // Parse actual article HTML into structured preview segments (Real Content)
   const segments = useMemo(() => {
-    const rawContent = formData.content || '';
-    if (!rawContent.trim()) {
-      return [
-        { id: 'intro', type: 'intro', label: 'PARAGRAPH 1 (LEAD INTRO)', text: formData.summary || 'Global markets and industrial investments continue to accelerate across major economic sectors...', html: null },
-        { id: 'p-1', type: 'paragraph', label: 'PARAGRAPH 2', text: 'Financial regulators and technology leaders met this week to finalize comprehensive digital governance frameworks...', html: null },
-        { id: 'p-2', type: 'paragraph', label: 'PARAGRAPH 3', text: 'There are costs and benefits to car use. The costs to the individual include acquiring the vehicle, repairs and maintenance, fuel, driving time, parking fees, taxes, and insurance...', html: null },
-        { id: 'p-3', type: 'paragraph', label: 'PARAGRAPH 4', text: 'Personal benefits include on-demand transportation, mobility, independence, and convenience across urban centers...', html: null },
-        { id: 'p-4', type: 'paragraph', label: 'PARAGRAPH 5', text: 'Societal benefits include economic benefits, such as job and wealth creation from the automotive industry, and societal wellbeing from leisure and travel opportunities...', html: null },
-        { id: 'p-5', type: 'paragraph', label: 'PARAGRAPH 6', text: 'Widespread car use results in road congestion and promotes urban sprawl, leading to higher infrastructure costs, habitat destruction...', html: null },
-        { id: 'p-6', type: 'paragraph', label: 'PARAGRAPH 7', text: 'There are costs and benefits to car use. The costs to the individual include acquiring the vehicle, repairs and maintenance, fuel, driving time, parking fees, taxes, and insurance...', html: null },
-        { id: 'p-7', type: 'paragraph', label: 'PARAGRAPH 8', text: 'Further updates will be published as executive committees conclude the quarterly bilateral summits...', html: null }
-      ];
-    }
+    const rawContent = (formData.content || '').trim();
 
-    // Extract text and media blocks from real article HTML
-    const tempDiv = typeof document !== 'undefined' ? document.createElement('div') : null;
-    if (tempDiv) {
-      tempDiv.innerHTML = rawContent;
-      const blockElements = Array.from(tempDiv.querySelectorAll('p, h1, h2, h3, blockquote, figure, .video-wrapper, .youtube-video-wrapper, .vimeo-video-wrapper, .direct-video-wrapper'));
-      
-      if (blockElements.length > 0) {
-        return blockElements.slice(0, 16).map((el, idx) => {
-          const text = el.textContent.trim() || '';
-          const isHeading = ['H1', 'H2', 'H3'].includes(el.tagName);
-          const isMedia = el.tagName === 'FIGURE' || el.classList?.contains('video-wrapper') || el.classList?.contains('youtube-video-wrapper') || el.classList?.contains('vimeo-video-wrapper') || el.classList?.contains('direct-video-wrapper') || el.querySelector('img, video, iframe');
-          
-          let label = `PARAGRAPH ${idx + 1}`;
-          let type = 'paragraph';
-          if (idx === 0 && !isMedia && !isHeading) {
-            label = 'PARAGRAPH 1 (LEAD INTRO)';
-            type = 'intro';
-          } else if (isHeading) {
-            label = `HEADING: "${text.slice(0, 24)}..."`;
-            type = 'heading';
-          } else if (isMedia) {
-            label = `MEDIA / FIGURE EMBED (POSITION ${idx + 1})`;
-            type = 'media';
-          }
+    if (rawContent && typeof document !== 'undefined') {
+      try {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = rawContent;
 
-          return {
-            id: idx === 0 ? 'intro' : `p-${idx}`,
-            index: idx,
-            type,
-            label,
-            text: text.length > 220 ? text.slice(0, 220) + '...' : text,
-            html: isMedia ? el.outerHTML : null
-          };
-        });
+        // Query all semantic block elements
+        const allBlocks = Array.from(tempDiv.querySelectorAll('p, h1, h2, h3, h4, h5, h6, blockquote, figure, ul, ol, table, .video-wrapper, .youtube-video-wrapper, .vimeo-video-wrapper, .direct-video-wrapper, .resizable-image-wrapper'));
+
+        if (allBlocks.length > 0) {
+          return allBlocks.map((el, idx) => {
+            const text = el.textContent.trim() || '';
+            const isHeading = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(el.tagName);
+            const isQuote = el.tagName === 'BLOCKQUOTE';
+            const isList = el.tagName === 'UL' || el.tagName === 'OL';
+            const isTable = el.tagName === 'TABLE';
+            const isMedia = el.tagName === 'FIGURE' || el.tagName === 'IMG' || el.querySelector('img, video, iframe') || el.classList?.contains('video-wrapper') || el.classList?.contains('resizable-image-wrapper');
+
+            let label = `PARAGRAPH ${idx + 1}`;
+            let type = 'paragraph';
+            if (idx === 0 && !isMedia && !isHeading) {
+              label = 'PARAGRAPH 1 (LEAD INTRO)';
+              type = 'intro';
+            } else if (isHeading) {
+              label = `${el.tagName}: "${text.slice(0, 40)}${text.length > 40 ? '...' : ''}"`;
+              type = 'heading';
+            } else if (isQuote) {
+              label = `PULL-QUOTE (BLOCK ${idx + 1})`;
+              type = 'quote';
+            } else if (isList) {
+              label = `LIST ITEMS (BLOCK ${idx + 1})`;
+              type = 'list';
+            } else if (isTable) {
+              label = `DATA TABLE (BLOCK ${idx + 1})`;
+              type = 'table';
+            } else if (isMedia) {
+              label = `MEDIA EMBED (POSITION ${idx + 1})`;
+              type = 'media';
+            }
+
+            return {
+              id: idx === 0 ? 'intro' : `p-${idx}`,
+              index: idx,
+              type,
+              label,
+              text: text,
+              html: el.outerHTML
+            };
+          });
+        }
+
+        // Direct children fallback
+        const children = Array.from(tempDiv.children);
+        if (children.length > 0) {
+          return children.map((el, idx) => {
+            const text = el.textContent.trim() || '';
+            return {
+              id: idx === 0 ? 'intro' : `p-${idx}`,
+              index: idx,
+              type: idx === 0 ? 'intro' : 'paragraph',
+              label: idx === 0 ? 'PARAGRAPH 1 (LEAD INTRO)' : `PARAGRAPH ${idx + 1}`,
+              text: text,
+              html: el.outerHTML
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('Error parsing article HTML for ad placement:', err);
       }
     }
 
+    // If rawContent is plain text without HTML tags, split by double newlines or single newlines
+    if (rawContent) {
+      const paras = rawContent.split(/\n\s*\n|\n/).map(p => p.trim()).filter(Boolean);
+      if (paras.length > 0) {
+        return paras.map((pText, idx) => ({
+          id: idx === 0 ? 'intro' : `p-${idx}`,
+          index: idx,
+          type: idx === 0 ? 'intro' : 'paragraph',
+          label: idx === 0 ? 'PARAGRAPH 1 (LEAD INTRO)' : `PARAGRAPH ${idx + 1}`,
+          text: pText,
+          html: `<p>${pText}</p>`
+        }));
+      }
+    }
+
+    // Contextual fallback based on the actual article being edited
+    const title = formData.title || 'Untitled Article Draft';
+    const summary = formData.summary || 'Article draft overview awaiting story body text.';
     return [
-      { id: 'intro', index: 0, type: 'intro', label: 'PARAGRAPH 1 (LEAD INTRO)', text: 'Article introduction content...', html: null },
-      { id: 'p-1', index: 1, type: 'paragraph', label: 'PARAGRAPH 2', text: 'Detailed article narrative continues here...', html: null },
-      { id: 'p-2', index: 2, type: 'paragraph', label: 'PARAGRAPH 3', text: 'Supporting evidence, analytical insights, and data points...', html: null },
-      { id: 'p-3', index: 3, type: 'paragraph', label: 'PARAGRAPH 4', text: 'Extended discussion on regional and international implications...', html: null }
+      { id: 'intro', index: 0, type: 'intro', label: 'PARAGRAPH 1 (LEAD INTRO)', text: summary, html: `<p><strong>${summary}</strong></p>` },
+      { id: 'p-1', index: 1, type: 'paragraph', label: 'PARAGRAPH 2 (DRAFT BODY)', text: `In-depth reporting on "${title}" will appear here as you type in the Story tab.`, html: `<p>In-depth reporting on <em>"${title}"</em> will appear here as you type in the Story tab.</p>` },
+      { id: 'p-2', index: 2, type: 'paragraph', label: 'PARAGRAPH 3 (ANALYTICAL INSIGHTS)', text: `Key evidence, stakeholder interviews, and data points regarding ${title} are presented here.`, html: `<p>Key evidence, stakeholder interviews, and data points regarding ${title} are presented here.</p>` },
+      { id: 'p-3', index: 3, type: 'paragraph', label: 'PARAGRAPH 4 (OUTLOOK & SUMMARY)', text: `Concluding perspectives and subsequent updates on ${title}.`, html: `<p>Concluding perspectives and subsequent updates on ${title}.</p>` }
     ];
-  }, [formData.content, formData.summary]);
+  }, [formData.content, formData.summary, formData.title]);
 
   // List of valid drop zones derived from content segments
   const dropZones = useMemo(() => {
@@ -537,20 +576,18 @@ export default function ArticleAdPlacementManager({
     ];
 
     segments.forEach((seg, idx) => {
-      if (idx > 0) {
-        zones.push({
-          id: `dropzone-p-${idx}`,
-          label: `Position ${idx + 1}: After ${seg.label}`,
-          type: 'after_paragraph',
-          value: String(idx),
-          order: idx + 1
-        });
-      }
+      zones.push({
+        id: `dropzone-p-${idx + 1}`,
+        label: `Position ${idx + 2}: After ${seg.label}`,
+        type: 'after_paragraph',
+        value: String(idx + 1),
+        order: idx + 2
+      });
     });
 
     zones.push({
       id: 'dropzone-related',
-      label: `Position ${zones.length + 1}: Before Related Articles & Comments`,
+      label: `Position ${zones.length + 1}: Before Related Articles & Discussion`,
       type: 'before_related',
       value: 'related',
       order: zones.length + 1
@@ -598,9 +635,9 @@ export default function ArticleAdPlacementManager({
         return {
           ...ad,
           dropZoneId: zone.id,
-          placementType: zone.type,
-          placementValue: zone.value,
-          sortOrder: zone.order
+          placementType: zone.type || 'after_paragraph',
+          placementValue: zone.value || '2',
+          sortOrder: zone.order || 2
         };
       }
       return ad;
@@ -608,6 +645,7 @@ export default function ArticleAdPlacementManager({
 
     updateAdPlacements(updated);
   };
+
 
   return (
     <div style={{
@@ -2236,10 +2274,15 @@ export default function ArticleAdPlacementManager({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '13px', fontWeight: 800, color: '#c084fc', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Move size={15} />
-                Interactive Placement Canvas (Matches Image 1):
+                Interactive Placement Canvas (Real Article View):
               </span>
               <span style={{ fontSize: '11px', color: '#94a3b8' }}>
-                (Drag the purple ad blocks into the dashed target zones)
+                (Drag ad blocks into dashed slots or click "+ Place Ad Here" to position ads inside the story)
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 700 }}>
+                {segments.length} Article Sections • {adPlacements.filter(a => a.enabled).length} Active Ads
               </span>
             </div>
           </div>
@@ -2253,51 +2296,159 @@ export default function ArticleAdPlacementManager({
             margin: '0 auto',
             transition: 'max-width 0.25s ease'
           }}>
-            {/* Render Dropzone 0 (Intro) */}
+            {/* REAL ARTICLE CONTEXT HEADER BANNER */}
+            <div style={{
+              background: 'linear-gradient(180deg, #0f172a 0%, #090d16 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '10px',
+              padding: '18px 22px',
+              marginBottom: '18px',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.4)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{
+                    background: '#dc2626',
+                    color: '#ffffff',
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    fontSize: '10.5px',
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.8px'
+                  }}>
+                    {formData.category || 'NEWS'}
+                  </span>
+                  {(formData.kicker || formData.supertitle) && (
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#f87171', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      {formData.kicker || formData.supertitle}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                  By <strong>{formData.author || 'Staff Reporter'}</strong> • {formData.readTime || '3 min read'}
+                </div>
+              </div>
+
+              <h2 style={{ fontSize: '20px', fontWeight: 900, color: '#ffffff', margin: '6px 0 10px 0', lineHeight: 1.35 }}>
+                {formData.title || 'Untitled Article Headline'}
+              </h2>
+
+              {formData.summary && (
+                <div style={{
+                  fontSize: '13px',
+                  color: '#cbd5e1',
+                  lineHeight: 1.5,
+                  borderLeft: '3px solid #38bdf8',
+                  paddingLeft: '12px',
+                  margin: '8px 0 12px 0',
+                  fontStyle: 'italic'
+                }}>
+                  {formData.summary}
+                </div>
+              )}
+
+              {/* Cover media preview if present */}
+              {(formData.imageUrl || formData.videoUrl) && (
+                <div style={{
+                  position: 'relative',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  maxHeight: '220px',
+                  marginTop: '12px',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }}>
+                  {formData.coverMediaType === 'video' && formData.videoUrl ? (
+                    <ContinuousCoverVideo
+                      src={formData.videoUrl}
+                      controls={false}
+                      autoPlay={true}
+                      loop={true}
+                      muted={true}
+                      style={{ width: '100%', height: '200px', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <img
+                      src={formData.imageUrl}
+                      alt={formData.title || 'Cover'}
+                      style={{ width: '100%', height: '200px', objectFit: 'cover', display: 'block' }}
+                    />
+                  )}
+                  {(formData.photoCaption || formData.photoCredit) && (
+                    <div style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      background: 'linear-gradient(transparent, rgba(0,0,0,0.85))',
+                      padding: '8px 12px',
+                      fontSize: '11px',
+                      color: '#e2e8f0'
+                    }}>
+                      {formData.photoCaption && <span>{formData.photoCaption} </span>}
+                      {formData.photoCredit && <span style={{ opacity: 0.75 }}>({formData.photoCredit})</span>}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Render Dropzone 0 (Intro Slot) */}
             {renderDropZoneSlot('dropzone-intro', dropZones[0])}
 
             {/* Render Content Stream with Interleaved Ads & Dropzones */}
             {segments.map((seg, segIdx) => {
               const correspondingZone = dropZones[segIdx + 1];
-              const zoneId = correspondingZone ? correspondingZone.id : `dropzone-p-${segIdx}`;
+              const zoneId = correspondingZone ? correspondingZone.id : `dropzone-p-${segIdx + 1}`;
               const assignedAds = adPlacements.filter(a => a.enabled && a.dropZoneId === zoneId);
 
               const leftAd = assignedAds.find(a => a.alignment === 'left');
               const rightAd = assignedAds.find(a => a.alignment === 'right');
-              const centerOrFullAds = assignedAds.filter(a => a.alignment === 'center' || a.alignment === 'full_width');
+              const centerOrFullAds = assignedAds.filter(a => a.alignment === 'center' || a.alignment === 'full_width' || !a.alignment);
 
               return (
-                <React.Fragment key={seg.id}>
-                  {/* Paragraph or Media Card Matching Image 1 */}
+                <React.Fragment key={seg.id || `seg-${segIdx}`}>
+                  {/* Real Paragraph / Section Card with Full Content */}
                   <div style={{
-                    background: '#0a0e17',
+                    background: '#090d16',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
                     borderRadius: '8px',
-                    padding: '14px 18px',
-                    margin: '10px 0'
+                    padding: '16px 20px',
+                    margin: '12px 0'
                   }}>
                     <div style={{
                       fontSize: '11px',
                       fontWeight: 800,
-                      color: '#f8fafc',
+                      color: '#38bdf8',
                       textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
+                      letterSpacing: '0.6px',
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '6px',
-                      marginBottom: '6px'
+                      justifyContent: 'space-between',
+                      marginBottom: '8px',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+                      paddingBottom: '4px'
                     }}>
-                      <span style={{ width: '8px', height: '12px', background: '#ffffff', borderRadius: '1px', display: 'inline-block' }} />
-                      <span>{seg.label}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: '8px', height: '12px', background: '#38bdf8', borderRadius: '1px', display: 'inline-block' }} />
+                        <span>{seg.label}</span>
+                      </div>
+                      <span style={{ fontSize: '10px', color: '#64748b' }}>
+                        Section #{segIdx + 1}
+                      </span>
                     </div>
 
                     {seg.html ? (
                       <div 
                         dangerouslySetInnerHTML={{ __html: seg.html }}
-                        style={{ margin: '8px 0', borderRadius: '6px', overflow: 'hidden' }}
+                        style={{
+                          fontSize: '14px',
+                          lineHeight: 1.7,
+                          color: '#e2e8f0'
+                        }}
                       />
                     ) : (
-                      <p style={{ margin: 0, fontSize: '13px', color: '#94a3b8', lineHeight: 1.6 }}>
+                      <p style={{ margin: 0, fontSize: '14px', color: '#e2e8f0', lineHeight: 1.7 }}>
                         {seg.text}
                       </p>
                     )}
@@ -2326,7 +2477,7 @@ export default function ArticleAdPlacementManager({
                         <div>
                           {segments[segIdx + 1] && (
                             <div style={{
-                              background: '#0a0e17',
+                              background: '#090d16',
                               border: '1px solid rgba(255, 255, 255, 0.08)',
                               borderRadius: '8px',
                               padding: '14px 18px',
@@ -2335,7 +2486,7 @@ export default function ArticleAdPlacementManager({
                               <div style={{
                                 fontSize: '11px',
                                 fontWeight: 800,
-                                color: '#f8fafc',
+                                color: '#38bdf8',
                                 textTransform: 'uppercase',
                                 letterSpacing: '0.5px',
                                 display: 'flex',
@@ -2343,10 +2494,10 @@ export default function ArticleAdPlacementManager({
                                 gap: '6px',
                                 marginBottom: '6px'
                               }}>
-                                <span style={{ width: '8px', height: '12px', background: '#ffffff', borderRadius: '1px', display: 'inline-block' }} />
+                                <span style={{ width: '8px', height: '12px', background: '#38bdf8', borderRadius: '1px', display: 'inline-block' }} />
                                 <span>{segments[segIdx + 1].label}</span>
                               </div>
-                              <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>
+                              <p style={{ margin: 0, fontSize: '13px', color: '#cbd5e1', lineHeight: 1.5 }}>
                                 {segments[segIdx + 1].text}
                               </p>
                             </div>
@@ -2393,7 +2544,7 @@ export default function ArticleAdPlacementManager({
               fontSize: '12px',
               fontWeight: 600
             }}>
-              [End of Article Content • Related Briefings & Discussion Section]
+              [End of Article Content • Related Briefings & Reader Comments Section]
             </div>
           </div>
         </div>
@@ -2405,67 +2556,128 @@ export default function ArticleAdPlacementManager({
           borderRadius: '12px',
           padding: '32px 40px',
           color: '#f8fafc',
-          maxHeight: '700px',
+          maxHeight: '750px',
           overflowY: 'auto'
         }}>
           <div style={{
             background: 'rgba(168, 85, 247, 0.15)',
             border: '1px solid rgba(168, 85, 247, 0.3)',
             borderRadius: '8px',
-            padding: '8px 14px',
-            marginBottom: '20px',
+            padding: '10px 16px',
+            marginBottom: '24px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between'
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '8px'
           }}>
-            <span style={{ fontSize: '12px', fontWeight: 800, color: '#c084fc' }}>
-              👁️ Super Admin Live Article Preview with Active Ad Placements ({adPlacements.filter(a => a.enabled).length} Ads)
+            <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#c084fc' }}>
+              👁️ Reader Live Article View with Embedded Ad Placements ({adPlacements.filter(a => a.enabled).length} Active Ads)
             </span>
             <span style={{ fontSize: '11px', color: '#cbd5e1' }}>
-              All embedded ads redirect readers to their destination link upon clicking
+              Shows real layout as published on reader site (civibrief.pages.dev)
             </span>
           </div>
 
-          <h1 style={{ fontSize: '28px', fontWeight: 900, color: '#ffffff', marginBottom: '16px', lineHeight: 1.3 }}>
-            {formData.title || 'Untitled Article'}
-          </h1>
+          <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+              <span style={{
+                background: '#dc2626',
+                color: '#ffffff',
+                padding: '3px 8px',
+                borderRadius: '4px',
+                fontSize: '11px',
+                fontWeight: 800,
+                textTransform: 'uppercase'
+              }}>
+                {formData.category || 'NEWS'}
+              </span>
+              {(formData.kicker || formData.supertitle) && (
+                <span style={{ fontSize: '13px', fontWeight: 800, color: '#f87171', textTransform: 'uppercase' }}>
+                  {formData.kicker || formData.supertitle}
+                </span>
+              )}
+            </div>
 
-          {formData.summary && (
-            <p style={{ fontSize: '15px', color: '#94a3b8', fontStyle: 'italic', borderLeft: '3px solid #38bdf8', paddingLeft: '12px', marginBottom: '24px' }}>
-              {formData.summary}
-            </p>
-          )}
+            <h1 style={{ fontSize: '32px', fontWeight: 900, color: '#ffffff', marginBottom: '14px', lineHeight: 1.25 }}>
+              {formData.title || 'Untitled Article'}
+            </h1>
 
-          {/* Full Article Content with Injected Ads */}
-          <div style={{ fontSize: '16px', lineHeight: 1.8, color: '#cbd5e1' }}>
-            {segments.map((seg, segIdx) => {
-              const correspondingZone = dropZones[segIdx + 1];
-              const zoneId = correspondingZone ? correspondingZone.id : `dropzone-p-${segIdx}`;
-              const assignedAds = adPlacements.filter(a => a.enabled && a.dropZoneId === zoneId);
+            <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '20px' }}>
+              By <strong>{formData.author || 'Staff Reporter'}</strong> • {formData.readTime || '3 min read'}
+            </div>
 
-              return (
-                <React.Fragment key={seg.id}>
-                  {seg.html ? (
-                    <div dangerouslySetInnerHTML={{ __html: seg.html }} style={{ margin: '18px 0' }} />
-                  ) : (
-                    <p style={{ marginBottom: '18px' }}>
-                      {seg.text}
-                    </p>
-                  )}
+            {/* Summary Block */}
+            {formData.summary && (
+              <p style={{ fontSize: '16px', color: '#cbd5e1', fontStyle: 'italic', borderLeft: '3px solid #38bdf8', paddingLeft: '14px', marginBottom: '24px', lineHeight: 1.6 }}>
+                {formData.summary}
+              </p>
+            )}
 
-                  {/* Render Assigned Ads at this exact position */}
-                  {assignedAds.map(ad => renderDraggableAdCard(ad))}
-                </React.Fragment>
-              );
-            })}
+            {/* Cover Media */}
+            {(formData.imageUrl || formData.videoUrl) && (
+              <div style={{ borderRadius: '8px', overflow: 'hidden', marginBottom: '24px' }}>
+                {formData.coverMediaType === 'video' && formData.videoUrl ? (
+                  <ContinuousCoverVideo
+                    src={formData.videoUrl}
+                    controls={true}
+                    autoPlay={true}
+                    loop={true}
+                    muted={true}
+                    style={{ width: '100%', height: '380px', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <img
+                    src={formData.imageUrl}
+                    alt={formData.title}
+                    style={{ width: '100%', maxHeight: '420px', objectFit: 'cover', display: 'block' }}
+                  />
+                )}
+                {(formData.photoCaption || formData.photoCredit) && (
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
+                    {formData.photoCaption} {formData.photoCredit && <em>({formData.photoCredit})</em>}
+                  </div>
+                )}
+              </div>
+            )}
 
-            {/* Before Related Ads */}
+            {/* Intro Slot Ads */}
             {(() => {
-              const relatedZone = dropZones.find(z => z.type === 'before_related');
-              if (!relatedZone) return null;
-              const relatedAds = adPlacements.filter(a => a.enabled && a.dropZoneId === relatedZone.id);
-              return relatedAds.map(ad => renderDraggableAdCard(ad));
+              const introAds = adPlacements.filter(a => a.enabled && a.dropZoneId === 'dropzone-intro');
+              return introAds.map(ad => renderDraggableAdCard(ad));
             })()}
+
+            {/* Full Article Content with Injected Ads */}
+            <div style={{ fontSize: '16px', lineHeight: 1.8, color: '#cbd5e1' }}>
+              {segments.map((seg, segIdx) => {
+                const correspondingZone = dropZones[segIdx + 1];
+                const zoneId = correspondingZone ? correspondingZone.id : `dropzone-p-${segIdx + 1}`;
+                const assignedAds = adPlacements.filter(a => a.enabled && a.dropZoneId === zoneId);
+
+                return (
+                  <React.Fragment key={seg.id || `seg-live-${segIdx}`}>
+                    {seg.html ? (
+                      <div dangerouslySetInnerHTML={{ __html: seg.html }} style={{ margin: '18px 0' }} />
+                    ) : (
+                      <p style={{ marginBottom: '18px' }}>
+                        {seg.text}
+                      </p>
+                    )}
+
+                    {/* Render Assigned Ads at this exact position */}
+                    {assignedAds.map(ad => renderDraggableAdCard(ad))}
+                  </React.Fragment>
+                );
+              })}
+
+              {/* Before Related Ads */}
+              {(() => {
+                const relatedZone = dropZones.find(z => z.type === 'before_related');
+                if (!relatedZone) return null;
+                const relatedAds = adPlacements.filter(a => a.enabled && a.dropZoneId === relatedZone.id);
+                return relatedAds.map(ad => renderDraggableAdCard(ad));
+              })()}
+            </div>
           </div>
         </div>
       )}
@@ -2519,14 +2731,16 @@ export default function ArticleAdPlacementManager({
         }}
         title="Drag to reposition this advertisement"
       >
-        {/* Header Bar Matching Image 1 */}
+        {/* Header Bar with Slot Changer Dropdown */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           borderBottom: '1px solid rgba(168, 85, 247, 0.3)',
           paddingBottom: '8px',
-          marginBottom: '10px'
+          marginBottom: '10px',
+          flexWrap: 'wrap',
+          gap: '6px'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <GripVertical size={14} color="#c084fc" />
@@ -2542,6 +2756,40 @@ export default function ArticleAdPlacementManager({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {/* Quick Slot Changer Dropdown */}
+            <select
+              value={ad.dropZoneId || 'dropzone-p-1'}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                const targetZoneId = e.target.value;
+                const targetZone = dropZones.find(z => z.id === targetZoneId);
+                const updated = adPlacements.map(a => a.id === ad.id ? {
+                  ...a,
+                  dropZoneId: targetZoneId,
+                  placementType: targetZone?.type || 'after_paragraph',
+                  placementValue: targetZone?.value || '2',
+                  sortOrder: targetZone?.order || 2
+                } : a);
+                updateAdPlacements(updated);
+              }}
+              style={{
+                background: '#1e1b4b',
+                color: '#c084fc',
+                border: '1px solid #a855f7',
+                borderRadius: '4px',
+                padding: '2px 6px',
+                fontSize: '10px',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              {dropZones.map(z => (
+                <option key={z.id} value={z.id}>
+                  {z.label}
+                </option>
+              ))}
+            </select>
+
             <span style={{
               background: isCompact ? '#38bdf8' : '#8b5cf6',
               color: isCompact ? '#000000' : '#ffffff',
@@ -2551,10 +2799,7 @@ export default function ArticleAdPlacementManager({
               fontWeight: 800,
               letterSpacing: '0.5px'
             }}>
-              ALIGN: {ad.alignment?.toUpperCase() || 'CENTER'}
-            </span>
-            <span style={{ fontSize: '10px', color: '#cbd5e1' }}>
-              ⠿ Move
+              {ad.alignment?.toUpperCase() || 'CENTER'}
             </span>
           </div>
         </div>
@@ -2602,29 +2847,53 @@ export default function ArticleAdPlacementManager({
                     }}
                   >
                     {isVideo ? (
-                      <video src={item.url} autoPlay muted loop playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                      <ContinuousCoverVideo
+                        src={item.url}
+                        controls={false}
+                        autoPlay={true}
+                        loop={true}
+                        muted={studioMuted}
+                        playsInline={true}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
                     ) : (
                       <img
-                        src={item.url || 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=600&q=80'}
+                        src={item.url}
                         alt={item.title || `Tile ${idx + 1}`}
                         style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                       />
                     )}
 
-                    {(item.tag || item.title) && (
+                    {item.tag && (
+                      <span style={{
+                        position: 'absolute',
+                        top: '6px',
+                        left: '6px',
+                        background: 'rgba(0, 0, 0, 0.75)',
+                        color: '#38bdf8',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontSize: '9px',
+                        fontWeight: 800,
+                        textTransform: 'uppercase'
+                      }}>
+                        {item.tag}
+                      </span>
+                    )}
+
+                    {item.title && (
                       <div style={{
                         position: 'absolute',
-                        bottom: '4px',
-                        left: '4px',
-                        background: 'rgba(0, 0, 0, 0.75)',
-                        color: '#f8fafc',
-                        fontSize: isCompact ? '8.5px' : '9px',
-                        fontWeight: 700,
-                        padding: '1px 6px',
-                        borderRadius: '3px',
-                        border: '1px solid rgba(255, 255, 255, 0.15)'
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        padding: '4px 8px',
+                        background: 'linear-gradient(transparent, rgba(0,0,0,0.85))',
+                        color: '#ffffff',
+                        fontSize: '10.5px',
+                        fontWeight: 700
                       }}>
-                        {item.tag || item.title}
+                        {item.title}
                       </div>
                     )}
                   </div>
@@ -2632,120 +2901,43 @@ export default function ArticleAdPlacementManager({
               })}
             </div>
 
-            {/* Collage Bottom Info Bar: Vertical Stack when Compact (Canva style) or Horizontal when Center */}
-            {isCompact ? (
-              <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                textAlign: 'center',
-                gap: '6px',
-                paddingTop: '2px'
-              }}>
-                <div style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc', lineHeight: 1.3 }}>
-                  {ad.headline || 'Sponsored Multi-Frame Showcase'}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '8px 12px',
+              background: 'rgba(0,0,0,0.3)',
+              borderRadius: '6px'
+            }}>
+              <div>
+                <div style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc' }}>
+                  {ad.headline || 'Featured Multi-Media Showcase'}
                 </div>
                 {ad.description && (
-                  <div style={{ fontSize: '11px', color: '#94a3b8', lineHeight: 1.3 }}>
+                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>
                     {ad.description}
                   </div>
                 )}
-                {targetLink && (
-                  <div style={{
-                    width: '100%',
-                    marginTop: '2px',
-                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                    color: '#ffffff',
-                    padding: '7px 12px',
-                    borderRadius: '8px',
-                    fontSize: '11.5px',
-                    fontWeight: 800,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '5px',
-                    boxShadow: '0 2px 8px rgba(168, 85, 247, 0.35)'
-                  }}>
-                    <Sparkles size={11} />
-                    <span>{ad.ctaText || 'Get Started Free ↗'}</span>
-                  </div>
-                )}
               </div>
-            ) : (
               <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '6px'
+                background: '#10b981',
+                color: '#fff',
+                padding: '4px 10px',
+                borderRadius: '4px',
+                fontSize: '11px',
+                fontWeight: 800
               }}>
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#f8fafc' }}>
-                    {ad.headline || 'Sponsored Multi-Frame Showcase'}
-                  </div>
-                  {ad.description && (
-                    <div style={{ fontSize: '11px', color: '#94a3b8', maxWidth: '420px', lineHeight: 1.3 }}>
-                      {ad.description}
-                    </div>
-                  )}
-                </div>
-
-                {targetLink && (
-                  <div style={{
-                    background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
-                    color: '#ffffff',
-                    padding: '5px 12px',
-                    borderRadius: '6px',
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    boxShadow: '0 2px 8px rgba(168, 85, 247, 0.35)'
-                  }}>
-                    <Sparkles size={11} />
-                    <span>{ad.ctaText || 'Explore Series ↗'}</span>
-                  </div>
-                )}
+                {ad.ctaText || 'Explore ↗'}
               </div>
-            )}
+            </div>
           </div>
         ) : ad.contentType === 'video' && ad.content ? (
-          <div style={{ borderRadius: '8px', overflow: 'hidden', position: 'relative', background: '#000' }}>
-            {/* Floating Volume / Mute Toggle Button */}
-            <button
-              type="button"
-              onClick={toggleStudioMute}
-              style={{
-                position: 'absolute',
-                top: '8px',
-                right: '8px',
-                zIndex: 20,
-                background: 'rgba(9, 13, 22, 0.85)',
-                backdropFilter: 'blur(8px)',
-                border: '1px solid rgba(255, 255, 255, 0.3)',
-                borderRadius: '50%',
-                width: '32px',
-                height: '32px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: studioMuted ? '#cbd5e1' : '#38bdf8',
-                cursor: 'pointer',
-                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.7)',
-                transition: 'all 0.2s ease',
-                pointerEvents: 'auto'
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.1)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-              title={studioMuted ? "Click to Unmute" : "Click to Mute"}
-            >
-              {studioMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
-            </button>
-
+          /* 1. EMBEDDED ONLINE VIDEO BANNER */
+          <div style={{ borderRadius: '8px', overflow: 'hidden', background: '#000000', border: '1px solid rgba(255,255,255,0.1)' }}>
             {videoEmbed ? (
-              <div style={{ position: 'relative', width: '100%', height: '240px', overflow: 'hidden', background: '#000' }}>
+              <div style={{ position: 'relative', width: '100%', height: '240px', overflow: 'hidden' }}>
                 <iframe
+                  ref={studioIframeRef}
                   src={videoEmbed}
                   title={ad.label || 'Video Ad'}
                   style={{
@@ -2904,9 +3096,12 @@ export default function ArticleAdPlacementManager({
     );
   }
 
-  // Sub-renderer: Droppable Insertion Target Line
+  // Sub-renderer: Droppable Insertion Target Line with 1-Click Placement
   function renderDropZoneSlot(zoneId, zone) {
     const isDragOver = dragOverZoneId === zoneId;
+    const currentAdTarget = currentAd;
+    const isCurrentAdHere = currentAdTarget && currentAdTarget.dropZoneId === zoneId;
+
     return (
       <div
         key={zoneId}
@@ -2914,28 +3109,63 @@ export default function ArticleAdPlacementManager({
         onDragLeave={(e) => handleDragLeave(e, zoneId)}
         onDrop={(e) => handleDrop(e, zone || { id: zoneId, type: 'after_paragraph', value: '2', order: 2 })}
         style={{
-          margin: '8px 0',
-          padding: isDragOver ? '16px' : '6px 12px',
-          border: isDragOver ? '2px dashed #a855f7' : '1px dashed rgba(255, 255, 255, 0.15)',
+          margin: '10px 0',
+          padding: isDragOver ? '16px 14px' : '8px 14px',
+          border: isDragOver ? '2px dashed #a855f7' : '1.5px dashed rgba(168, 85, 247, 0.25)',
           borderRadius: '8px',
-          background: isDragOver ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255, 255, 255, 0.02)',
-          textAlign: 'center',
-          cursor: 'pointer',
-          transition: 'all 0.15s ease',
+          background: isDragOver ? 'rgba(168, 85, 247, 0.22)' : 'rgba(168, 85, 247, 0.04)',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          gap: '6px'
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '8px',
+          transition: 'all 0.15s ease'
         }}
-        title="Drop advertisement here to reposition"
+        title="Drop or place advertisement here"
       >
-        <span style={{
-          fontSize: '11px',
-          fontWeight: isDragOver ? 800 : 600,
-          color: isDragOver ? '#c084fc' : '#64748b'
-        }}>
-          {isDragOver ? `📍 Drop Advertisement Here (${zone?.label || zoneId})` : `+ Drop Target: 📍 ${zone?.label || zoneId}`}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{
+            fontSize: '11.5px',
+            fontWeight: isDragOver ? 800 : 700,
+            color: isDragOver ? '#c084fc' : '#a855f7'
+          }}>
+            📍 {zone?.label || zoneId}
+          </span>
+        </div>
+
+        {currentAdTarget && !isCurrentAdHere && (
+          <button
+            type="button"
+            onClick={() => {
+              const targetZone = zone || dropZones.find(z => z.id === zoneId);
+              const updated = adPlacements.map(a => a.id === currentAdTarget.id ? {
+                ...a,
+                dropZoneId: zoneId,
+                placementType: targetZone?.type || 'after_paragraph',
+                placementValue: targetZone?.value || '2',
+                sortOrder: targetZone?.order || 2
+              } : a);
+              updateAdPlacements(updated);
+            }}
+            style={{
+              background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '4px 10px',
+              fontSize: '11px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              boxShadow: '0 2px 8px rgba(139, 92, 246, 0.3)'
+            }}
+          >
+            <Plus size={12} />
+            <span>Place "{currentAdTarget.label || 'Active Ad'}" Here</span>
+          </button>
+        )}
       </div>
     );
   }
