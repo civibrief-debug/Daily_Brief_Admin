@@ -4,37 +4,53 @@ export const INITIAL_ROLE_DEFINITIONS = [
     name: "Super Admin",
     badgeClass: "badge-super",
     description: "Manage admins, users, subscriptions, platform settings.",
-    permissions: ["all_access", "manage_admins", "manage_users", "manage_subscriptions", "platform_settings", "manage_content", "support_access"]
+    permissions: [
+      "all_access",
+      "manage_admins",
+      "manage_users",
+      "manage_subscriptions",
+      "platform_settings",
+      "manage_content",
+      "manage_articles",
+      "support_access",
+      "reset_passwords",
+      "verify_users",
+      "review_content",
+      "edit_assigned_articles",
+      "request_changes",
+      "approve_articles"
+    ]
   },
   {
     id: "editor",
     name: "Editor",
     badgeClass: "badge-editor",
     description: "Review, edit, polish content quality & SEO. Return with notes or approve articles.",
-    permissions: ["review_content", "edit_assigned_articles", "request_changes", "approve_articles"]
+    permissions: ["manage_content", "review_content", "edit_assigned_articles", "request_changes", "approve_articles"]
   },
   {
     id: "content_admin",
     name: "Content Admin",
     badgeClass: "badge-content",
     description: "Add, edit, publish, archive and remove articles.",
-    permissions: ["manage_content", "view_analytics"]
+    permissions: ["manage_content", "manage_articles", "view_analytics"]
   },
   {
     id: "subscription_manager",
     name: "Subscription Manager",
     badgeClass: "badge-subscription",
     description: "Manage subscription plans, premium users and renewals.",
-    permissions: ["manage_subscriptions", "view_financial_analytics"]
+    permissions: ["manage_subscriptions", "manage_plans", "view_financial_analytics"]
   },
   {
     id: "support_admin",
     name: "Support Admin",
     badgeClass: "badge-support",
     description: "Reset passwords, verify users, handle account issues.",
-    permissions: ["reset_passwords", "verify_users", "manage_support_tickets"]
+    permissions: ["reset_passwords", "verify_users", "manage_support_tickets", "support_access"]
   }
 ];
+
 
 export const INITIAL_ARTICLES = [];
 

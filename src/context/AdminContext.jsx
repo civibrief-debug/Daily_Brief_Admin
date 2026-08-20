@@ -31,7 +31,7 @@ export function AdminProvider({ children }) {
     }
     return 'dark';
   });
-  const [currentUser, setCurrentUser] = useState(DEFAULT_SUPER_ADMIN);
+  const [currentUser, setCurrentUser] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
   const [articles, setArticles] = useState(INITIAL_ARTICLES);
@@ -62,7 +62,7 @@ export function AdminProvider({ children }) {
     });
   };
 
-  // Sync auth state & admin users from localStorage on load
+  // Sync auth state & admin users from localStorage & D1 on load
   useEffect(() => {
     const savedTheme = localStorage.getItem('db_admin_theme') || 'dark';
     setTheme(savedTheme);
@@ -72,24 +72,28 @@ export function AdminProvider({ children }) {
     if (savedUserStr) {
       try {
         const savedUser = JSON.parse(savedUserStr);
-        if (savedUser.roleId === 'super_admin') {
-          const normalized = {
-            ...DEFAULT_SUPER_ADMIN,
-            name: 'Super Admin',
-            email: 'admin@dailybrief.com'
-          };
-          setCurrentUser(normalized);
-          localStorage.setItem('db_admin_user', JSON.stringify(normalized));
+        if (savedUser && savedUser.id) {
+          if (savedUser.roleId === 'super_admin' && savedUser.id === 'super-admin-root') {
+            const normalized = {
+              ...DEFAULT_SUPER_ADMIN,
+              name: 'Super Admin',
+              email: 'admin@dailybrief.com'
+            };
+            setCurrentUser(normalized);
+          } else {
+            setCurrentUser(savedUser);
+          }
         } else {
-          setCurrentUser(savedUser);
+          setCurrentUser(null);
+          localStorage.removeItem('db_admin_user');
         }
       } catch (err) {
         console.error("Failed to parse saved admin user", err);
-        setCurrentUser(DEFAULT_SUPER_ADMIN);
+        setCurrentUser(null);
+        localStorage.removeItem('db_admin_user');
       }
     } else {
-      setCurrentUser(DEFAULT_SUPER_ADMIN);
-      localStorage.setItem('db_admin_user', JSON.stringify(DEFAULT_SUPER_ADMIN));
+      setCurrentUser(null);
     }
 
     const savedAdminsStr = localStorage.getItem('db_admin_users');
@@ -139,16 +143,7 @@ export function AdminProvider({ children }) {
         if (admRes && admRes.ok) {
           const admJson = await admRes.json().catch(() => null);
           if (admJson && admJson.success && Array.isArray(admJson.data) && admJson.data.length > 0) {
-            setAdminUsers(prev => {
-              const fileAdminsMap = new Map(admJson.data.map(u => [u.id, u]));
-              const updated = prev.map(u => fileAdminsMap.get(u.id) || u);
-              admJson.data.forEach(u => {
-                if (!updated.some(existing => existing.id === u.id)) {
-                  updated.push(u);
-                }
-              });
-              return updated;
-            });
+            setAdminUsers(admJson.data);
           }
         }
       } catch (err) {
@@ -171,7 +166,7 @@ export function AdminProvider({ children }) {
     }, 4000);
   };
 
-  // Authenticated Login Function matching Super Admin OR assigned admin users
+  // Authenticated Login Function matching Super Admin OR assigned admin users in D1
   const login = (usernameInput, passwordInput) => {
     const trimmedUser = (usernameInput || '').trim().toLowerCase();
     const trimmedUserNoSpace = trimmedUser.replace(/\s+/g, '');
@@ -205,7 +200,7 @@ export function AdminProvider({ children }) {
       return { success: true, user: userSession };
     }
 
-    // Check dynamically created adminUsers
+    // Check dynamically created adminUsers in state & D1
     const matchAdmin = adminUsers.find(a => {
       if (!a) return false;
       const nameLower = (a.name || '').toLowerCase().trim();
@@ -242,7 +237,8 @@ export function AdminProvider({ children }) {
 
       setCurrentUser(userSession);
       localStorage.setItem('db_admin_user', JSON.stringify(userSession));
-      showToast(`Welcome back, ${userSession.name} (${INITIAL_ROLE_DEFINITIONS.find(r => r.id === userSession.roleId)?.name})`, "success");
+      const roleDef = INITIAL_ROLE_DEFINITIONS.find(r => r.id === userSession.roleId);
+      showToast(`Welcome back, ${userSession.name} (${roleDef?.name || userSession.roleId})`, "success");
       return { success: true, user: userSession };
     }
 
@@ -280,8 +276,14 @@ export function AdminProvider({ children }) {
   const hasPermission = (permission) => {
     if (!currentUser) return false;
     if (currentUser.roleId === 'super_admin') return true;
-    return activeRole.permissions.includes(permission);
+    const currentRoleDef = INITIAL_ROLE_DEFINITIONS.find(r => r.id === currentUser.roleId);
+    if (!currentRoleDef) return false;
+    return (
+      currentRoleDef.permissions.includes(permission) ||
+      (Array.isArray(currentUser.actionPermissions) && currentUser.actionPermissions.includes(permission))
+    );
   };
+
 
   // Article Actions (Content Admin & Super Admin) -> Persisted to Shared DB
   const addArticle = async (newArticle) => {
@@ -646,7 +648,7 @@ export function AdminProvider({ children }) {
     showToast(`Admin personnel access for ${updatedAdmin.name} updated.`, "success");
   };
 
-  const deleteAdminUser = (adminId) => {
+  const deleteAdminUser = async (adminId) => {
     const target = adminUsers.find(a => a.id === adminId);
     if (target && target.roleId === 'super_admin') {
       showToast("Super Admin Master Controller cannot be removed.", "error");
@@ -658,6 +660,14 @@ export function AdminProvider({ children }) {
       localStorage.setItem('db_admin_users', JSON.stringify(updated));
       return updated;
     });
+
+    try {
+      await fetch(`/api/db/admins?id=${encodeURIComponent(adminId)}`, {
+        method: 'DELETE'
+      });
+    } catch (err) {
+      console.error("Failed to delete admin from database:", err);
+    }
 
     // Unassign all articles assigned to this deleted editor account
     if (target) {
@@ -687,6 +697,10 @@ export function AdminProvider({ children }) {
   const updateSettings = (newSettings) => {
     setSettings(newSettings);
     showToast("System configuration updated.", "success");
+  };
+
+  const updatePlatformSettings = (newSettings) => {
+    updateSettings(newSettings);
   };
 
   return (
@@ -736,6 +750,7 @@ export function AdminProvider({ children }) {
 
       settings,
       updateSettings,
+      updatePlatformSettings,
 
       toastMessage,
       showToast,

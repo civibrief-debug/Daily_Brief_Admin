@@ -67,3 +67,20 @@ export async function PUT(req) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
+
+export async function DELETE(req) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'Admin ID required' }, { status: 400 });
+    }
+
+    await queryD1('DELETE FROM admin_users WHERE id = ?;', [id]);
+    return NextResponse.json({ success: true, message: 'Admin deleted successfully' });
+  } catch (err) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+
