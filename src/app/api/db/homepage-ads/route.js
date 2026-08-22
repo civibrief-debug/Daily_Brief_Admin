@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { queryD1 } from '../../../../lib/edgeDb';
 import { INITIAL_HOMEPAGE_ADS } from '../../../../data/mockInitialData';
 
+export const runtime = 'edge';
+
 let memoryAds = INITIAL_HOMEPAGE_ADS;
 
 export async function GET() {
