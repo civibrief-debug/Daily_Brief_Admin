@@ -881,8 +881,9 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
             coverCropBox: cropBox,
             coverAspectRatio: `${Math.round(srcW)} / ${Math.round(srcH)}`,
             coverCropStyle: {
-              aspectRatio: `${Math.round(srcW)} / ${Math.round(srcH)}`,
-              objectFit: 'cover'
+              objectFit: 'cover',
+              width: '100%',
+              height: '100%'
             }
           }));
         } catch {
@@ -892,8 +893,9 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
             coverAspectRatio: `${cropBox.width} / ${cropBox.height}`,
             coverCropStyle: {
               clipPath: `inset(${insetTop.toFixed(2)}% ${insetRight.toFixed(2)}% ${insetBottom.toFixed(2)}% ${insetLeft.toFixed(2)}%)`,
-              aspectRatio: `${cropBox.width} / ${cropBox.height}`,
-              objectFit: 'cover'
+              objectFit: 'cover',
+              width: '100%',
+              height: '100%'
             }
           }));
         }
@@ -906,8 +908,9 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
           coverAspectRatio: `${cropBox.width} / ${cropBox.height}`,
           coverCropStyle: {
             clipPath: `inset(${insetTop.toFixed(2)}% ${insetRight.toFixed(2)}% ${insetBottom.toFixed(2)}% ${insetLeft.toFixed(2)}%)`,
-            aspectRatio: `${cropBox.width} / ${cropBox.height}`,
-            objectFit: 'cover'
+            objectFit: 'cover',
+            width: '100%',
+            height: '100%'
           }
         }));
         setShowCropModal(false);
@@ -924,8 +927,9 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         coverAspectRatio: `${cropBox.width} / ${cropBox.height}`,
         coverCropStyle: {
           clipPath: `inset(${insetTop.toFixed(2)}% ${insetRight.toFixed(2)}% ${insetBottom.toFixed(2)}% ${insetLeft.toFixed(2)}%)`,
-          aspectRatio: `${cropBox.width} / ${cropBox.height}`,
-          objectFit: 'cover'
+          objectFit: 'cover',
+          width: '100%',
+          height: '100%'
         }
       }));
       setShowCropModal(false);
@@ -5982,6 +5986,10 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                     }}
                     setFormData={setFormData}
                     isSuperAdmin={isSuperAdmin}
+                    onSaveLiveArticle={(e) => executeSaveAction(e, 'Published')}
+                    onPreviewArticle={() => setShowPreviewModal(true)}
+                    isSaving={isSaving}
+                    articleToEdit={articleToEdit}
                   />
                 </div>
               )}

@@ -28,8 +28,13 @@ import {
   Upload,
   MousePointerClick,
   Volume2,
-  VolumeX
+  VolumeX,
+  Save,
+  Eye,
+  Check,
+  CheckCircle2
 } from 'lucide-react';
+import { useAdmin } from '../context/AdminContext';
 import ContinuousCoverVideo from './ContinuousCoverVideo';
 
 // Helper to extract embed video URL (YouTube, Vimeo, etc.) with zero controls & continuous loop
@@ -189,15 +194,54 @@ export const SAMPLE_AD_TEMPLATES = [
 export default function ArticleAdPlacementManager({
   formData,
   setFormData,
-  isSuperAdmin = true
+  isSuperAdmin = true,
+  onSaveLiveArticle,
+  onPreviewArticle,
+  isSaving = false,
+  articleToEdit = null
 }) {
+  const { updateArticle, addArticle } = useAdmin();
   const [activeAdId, setActiveAdId] = useState(null);
   const [draggedAdId, setDraggedAdId] = useState(null);
   const [dragOverZoneId, setDragOverZoneId] = useState(null);
   const [viewMode, setViewMode] = useState('canvas'); // 'canvas' | 'live_article' | 'mobile'
   const [showPresetDropdown, setShowPresetDropdown] = useState(false);
   const [studioMuted, setStudioMuted] = useState(true);
+  const [localSaving, setLocalSaving] = useState(false);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
   const studioIframeRef = useRef(null);
+
+  const handleSaveLiveArticleClick = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (onSaveLiveArticle) {
+      onSaveLiveArticle(e);
+      return;
+    }
+
+    try {
+      setLocalSaving(true);
+      if (formData.id || articleToEdit?.id) {
+        await updateArticle({ ...formData, status: 'Published' });
+      } else {
+        await addArticle({ ...formData, status: 'Published' });
+      }
+      setSaveSuccessMsg('✅ Live article updated with ad placements!');
+      setTimeout(() => setSaveSuccessMsg(''), 4000);
+    } catch (err) {
+      console.error('Error updating live article:', err);
+      alert('An error occurred while updating the live article.');
+    } finally {
+      setLocalSaving(false);
+    }
+  };
+
+  const handlePreviewClick = () => {
+    if (onPreviewArticle) {
+      onPreviewArticle();
+    } else {
+      setViewMode('live_article');
+    }
+  };
 
   const toggleStudioMute = (e) => {
     e.stopPropagation();
@@ -767,6 +811,57 @@ export default function ArticleAdPlacementManager({
               }}
             >
               <Smartphone size={12} /> Mobile Flow
+            </button>
+          </div>
+
+          {/* Quick Action Buttons: Preview & Update Live Article */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={handlePreviewClick}
+              style={{
+                background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 14px',
+                fontSize: '12px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                boxShadow: '0 4px 12px rgba(99, 102, 241, 0.35)'
+              }}
+              title="Preview article with embedded ad placements"
+            >
+              <Eye size={14} />
+              <span>👁️ Preview Article</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={isSaving || localSaving}
+              onClick={handleSaveLiveArticleClick}
+              style={{
+                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 18px',
+                fontSize: '12px',
+                fontWeight: 900,
+                cursor: (isSaving || localSaving) ? 'not-allowed' : 'pointer',
+                opacity: (isSaving || localSaving) ? 0.7 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
+              }}
+              title="Save and update live article with ad placements"
+            >
+              <Save size={14} />
+              <span>{(isSaving || localSaving) ? 'Saving...' : '💾 Update Live Article'}</span>
             </button>
           </div>
 
@@ -2545,6 +2640,103 @@ export default function ArticleAdPlacementManager({
               fontWeight: 600
             }}>
               [End of Article Content • Related Briefings & Reader Comments Section]
+            </div>
+
+            {/* Success notification banner if saved */}
+            {saveSuccessMsg && (
+              <div style={{
+                margin: '16px 0',
+                padding: '12px 16px',
+                background: 'rgba(16, 185, 129, 0.15)',
+                border: '1px solid #10b981',
+                borderRadius: '8px',
+                color: '#34d399',
+                fontSize: '13px',
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}>
+                <Check size={16} />
+                <span>{saveSuccessMsg}</span>
+              </div>
+            )}
+
+            {/* Bottom Action Dock: Update Live Article & Preview (Matches User Request & Screenshot) */}
+            <div style={{
+              marginTop: '20px',
+              padding: '16px 20px',
+              background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%)',
+              border: '1.5px solid rgba(168, 85, 247, 0.35)',
+              borderRadius: '10px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '12px',
+              boxShadow: '0 8px 30px rgba(0,0,0,0.5)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ background: '#7c3aed', color: '#ffffff', padding: '6px 10px', borderRadius: '6px', fontSize: '13px', fontWeight: 900 }}>
+                  📢
+                </div>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 800, color: '#ffffff' }}>
+                    Ad Placements Configured ({adPlacements.filter(a => a.enabled).length} Active)
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                    Ready to preview reader layout or publish updates directly to the live article
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={handlePreviewClick}
+                  style={{
+                    background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px 18px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 14px rgba(99, 102, 241, 0.4)'
+                  }}
+                >
+                  <Eye size={14} />
+                  <span>👁️ Preview Article</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isSaving || localSaving}
+                  onClick={handleSaveLiveArticleClick}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '8px 22px',
+                    fontSize: '12.5px',
+                    fontWeight: 900,
+                    cursor: (isSaving || localSaving) ? 'not-allowed' : 'pointer',
+                    opacity: (isSaving || localSaving) ? 0.7 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 16px rgba(16, 185, 129, 0.4)'
+                  }}
+                >
+                  <Save size={15} />
+                  <span>{(isSaving || localSaving) ? 'Saving...' : '💾 Update Live Article'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

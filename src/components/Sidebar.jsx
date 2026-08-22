@@ -4,7 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAdmin } from '../context/AdminContext';
-import { LayoutDashboard, FileText, CreditCard, LifeBuoy, Users, Settings, Lock, Info } from 'lucide-react';
+import { LayoutDashboard, FileText, CreditCard, LifeBuoy, Users, Settings, Lock, Info, Megaphone, LayoutGrid } from 'lucide-react';
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -47,6 +47,20 @@ export default function Sidebar() {
       path: '/admins',
       icon: <Users size={18} />,
       permission: 'manage_admins',
+      roleBadge: 'Super Admin'
+    },
+    {
+      label: 'Homepage Article Placement',
+      path: '/homepage-articles',
+      icon: <LayoutGrid size={18} />,
+      permission: 'manage_content',
+      roleBadge: 'Super Admin'
+    },
+    {
+      label: 'Home page AD Placement',
+      path: '/homepage-ads',
+      icon: <Megaphone size={18} />,
+      permission: 'manage_content',
       roleBadge: 'Super Admin'
     },
     {

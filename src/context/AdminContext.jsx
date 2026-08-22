@@ -8,7 +8,9 @@ import {
   INITIAL_SUBSCRIBERS,
   INITIAL_SUPPORT_TICKETS,
   INITIAL_ADMIN_USERS,
-  INITIAL_PLATFORM_SETTINGS
+  INITIAL_PLATFORM_SETTINGS,
+  INITIAL_HOMEPAGE_ADS,
+  INITIAL_HOMEPAGE_ARTICLE_SECTIONS
 } from '../data/mockInitialData';
 
 const AdminContext = createContext();
@@ -40,6 +42,8 @@ export function AdminProvider({ children }) {
   const [supportTickets, setSupportTickets] = useState(INITIAL_SUPPORT_TICKETS);
   const [adminUsers, setAdminUsers] = useState(INITIAL_ADMIN_USERS);
   const [settings, setSettings] = useState(INITIAL_PLATFORM_SETTINGS);
+  const [homepageAds, setHomepageAds] = useState(INITIAL_HOMEPAGE_ADS);
+  const [homepageArticleSections, setHomepageArticleSections] = useState(INITIAL_HOMEPAGE_ARTICLE_SECTIONS);
   const [toastMessage, setToastMessage] = useState(null);
 
   // Sync document theme attribute whenever theme state changes
@@ -96,52 +100,103 @@ export function AdminProvider({ children }) {
     const savedAdminsStr = localStorage.getItem('db_admin_users');
     if (savedAdminsStr) {
       try {
-        const savedAdmins = JSON.parse(savedAdminsStr);
-        if (Array.isArray(savedAdmins)) {
-          const cleanAdmins = savedAdmins.filter(a => a.roleId !== 'super_admin');
-          setAdminUsers(cleanAdmins);
+        const parsedAdmins = JSON.parse(savedAdminsStr);
+        if (Array.isArray(parsedAdmins) && parsedAdmins.length > 0) {
+          setAdminUsers(parsedAdmins);
         }
       } catch (err) {
-        console.error("Failed to parse saved admin users list", err);
+        console.error("Failed to parse saved admin users", err);
       }
     }
 
     // Fetch initial database collections from central database API
     const loadSharedDbData = async () => {
       try {
-        const [artRes, subRes, suppRes, admRes] = await Promise.all([
+        const [artsRes, subsRes, tktsRes, admsRes] = await Promise.all([
           fetch('/api/db/articles').catch(() => null),
           fetch('/api/db/subscribers').catch(() => null),
           fetch('/api/db/support').catch(() => null),
           fetch('/api/db/admins').catch(() => null)
         ]);
         
-        if (artRes && artRes.ok) {
-          const artJson = await artRes.json().catch(() => null);
-          if (artJson && artJson.success && Array.isArray(artJson.data)) {
-            setArticles(artJson.data);
+        if (artsRes && artsRes.ok) {
+          const artsJson = await artsRes.json().catch(() => null);
+          if (artsJson && artsJson.success && Array.isArray(artsJson.data) && artsJson.data.length > 0) {
+            setArticles(artsJson.data);
           }
         }
 
-        if (subRes && subRes.ok) {
-          const subJson = await subRes.json().catch(() => null);
-          if (subJson && subJson.success && Array.isArray(subJson.data)) {
-            setSubscribers(subJson.data);
+        if (subsRes && subsRes.ok) {
+          const subsJson = await subsRes.json().catch(() => null);
+          if (subsJson && subsJson.success && Array.isArray(subsJson.data) && subsJson.data.length > 0) {
+            setSubscribers(subsJson.data);
           }
         }
 
-        if (suppRes && suppRes.ok) {
-          const suppJson = await suppRes.json().catch(() => null);
-          if (suppJson && suppJson.success && Array.isArray(suppJson.data)) {
-            setSupportTickets(suppJson.data);
+        if (tktsRes && tktsRes.ok) {
+          const tktsJson = await tktsRes.json().catch(() => null);
+          if (tktsJson && tktsJson.success && Array.isArray(tktsJson.data) && tktsJson.data.length > 0) {
+            setSupportTickets(tktsJson.data);
           }
         }
 
-        if (admRes && admRes.ok) {
-          const admJson = await admRes.json().catch(() => null);
-          if (admJson && admJson.success && Array.isArray(admJson.data) && admJson.data.length > 0) {
-            setAdminUsers(admJson.data);
+        if (admsRes && admsRes.ok) {
+          const admsJson = await admsRes.json().catch(() => null);
+          if (admsJson && admsJson.success && Array.isArray(admsJson.data) && admsJson.data.length > 0) {
+            setAdminUsers(admsJson.data);
+            localStorage.setItem('db_admin_users', JSON.stringify(admsJson.data));
           }
+        }
+
+        // Load saved Homepage Ads from localStorage or API
+        const savedHomepageAds = localStorage.getItem('db_homepage_ads');
+        if (savedHomepageAds) {
+          try {
+            const parsed = JSON.parse(savedHomepageAds);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setHomepageAds(parsed);
+            }
+          } catch (e) {
+            console.error("Error parsing saved homepage ads", e);
+          }
+        }
+
+        const savedArticleSections = localStorage.getItem('db_homepage_article_sections');
+        if (savedArticleSections) {
+          try {
+            const parsed = JSON.parse(savedArticleSections);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setHomepageArticleSections(parsed);
+            }
+          } catch (e) {
+            console.error("Error parsing saved homepage article sections", e);
+          }
+        }
+
+        try {
+          const adsRes = await fetch('/api/db/homepage-ads').catch(() => null);
+          if (adsRes && adsRes.ok) {
+            const adsJson = await adsRes.json().catch(() => null);
+            if (adsJson && adsJson.success && Array.isArray(adsJson.data) && adsJson.data.length > 0) {
+              setHomepageAds(adsJson.data);
+              localStorage.setItem('db_homepage_ads', JSON.stringify(adsJson.data));
+            }
+          }
+        } catch (e) {
+          console.warn("Could not fetch remote homepage ads", e);
+        }
+
+        try {
+          const artSecRes = await fetch('/api/db/homepage-articles').catch(() => null);
+          if (artSecRes && artSecRes.ok) {
+            const artSecJson = await artSecRes.json().catch(() => null);
+            if (artSecJson && artSecJson.success && Array.isArray(artSecJson.data) && artSecJson.data.length > 0) {
+              setHomepageArticleSections(artSecJson.data);
+              localStorage.setItem('db_homepage_article_sections', JSON.stringify(artSecJson.data));
+            }
+          }
+        } catch (e) {
+          console.warn("Could not fetch remote homepage article placements", e);
         }
       } catch (err) {
         console.warn("Failed to sync with shared database (suppressed):", err?.message || err);
@@ -152,6 +207,51 @@ export function AdminProvider({ children }) {
 
     loadSharedDbData();
   }, []);
+
+  const updateHomepageAds = async (newAds) => {
+    setHomepageAds(newAds);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('db_homepage_ads', JSON.stringify(newAds));
+    }
+    try {
+      await fetch('/api/db/homepage-ads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ads: newAds })
+      });
+    } catch (e) {
+      console.warn("Could not push homepage ads to remote API", e);
+    }
+    showToast("Homepage Ad Placements saved successfully!", "success");
+  };
+
+  const updateHomepageArticlePlacements = async (newSections) => {
+    setHomepageArticleSections(newSections);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('db_homepage_article_sections', JSON.stringify(newSections));
+    }
+    try {
+      await fetch('/api/db/homepage-articles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sections: newSections })
+      });
+    } catch (e) {
+      console.warn("Could not push homepage article placements to remote API", e);
+    }
+    showToast("Homepage Article Placements saved & published successfully!", "success");
+  };
+
+  const updateSingleHomepageAd = (adId, updatedFields) => {
+    setHomepageAds(prev => {
+      const next = prev.map(item => item.id === adId ? { ...item, ...updatedFields } : item);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('db_homepage_ads', JSON.stringify(next));
+      }
+      return next;
+    });
+    showToast("Homepage ad slot updated", "info");
+  };
 
   const activeRoleId = currentUser ? currentUser.roleId : null;
   const activeRole = INITIAL_ROLE_DEFINITIONS.find(r => r.id === activeRoleId) || INITIAL_ROLE_DEFINITIONS[0];
@@ -774,6 +874,13 @@ export function AdminProvider({ children }) {
       settings,
       updateSettings,
       updatePlatformSettings,
+
+      homepageAds,
+      updateHomepageAds,
+      updateSingleHomepageAd,
+
+      homepageArticleSections,
+      updateHomepageArticlePlacements,
 
       toastMessage,
       showToast,
