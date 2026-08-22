@@ -77,9 +77,24 @@ CREATE TABLE IF NOT EXISTS support_tickets (
   createdAt TEXT
 );
 
+-- 5. Homepage Ads Table (Sponsors, Dimensions, Custom Layouts & Visibility)
+CREATE TABLE IF NOT EXISTS homepage_ads (
+  id TEXT PRIMARY KEY,
+  data TEXT,
+  updated_at TEXT
+);
+
+-- 6. Homepage Articles Table (Zone Category Placements & Pinned Stories)
+CREATE TABLE IF NOT EXISTS homepage_articles (
+  id TEXT PRIMARY KEY,
+  data TEXT,
+  updated_at TEXT
+);
+
 -- Indices for Fast Queries
 CREATE INDEX IF NOT EXISTS idx_articles_status ON articles(status);
 CREATE INDEX IF NOT EXISTS idx_articles_category ON articles(category);
 CREATE INDEX IF NOT EXISTS idx_articles_published ON articles(publishedAt);
 CREATE INDEX IF NOT EXISTS idx_admin_email ON admin_users(email);
 CREATE INDEX IF NOT EXISTS idx_subscribers_email ON subscribers(email);
+
