@@ -242,15 +242,25 @@ export function AdminProvider({ children }) {
     showToast("Homepage Article Placements saved & published successfully!", "success");
   };
 
-  const updateSingleHomepageAd = (adId, updatedFields) => {
+  const updateSingleHomepageAd = async (adId, updatedFields) => {
+    let nextList = [];
     setHomepageAds(prev => {
-      const next = prev.map(item => item.id === adId ? { ...item, ...updatedFields } : item);
+      nextList = prev.map(item => item.id === adId ? { ...item, ...updatedFields } : item);
       if (typeof window !== 'undefined') {
-        localStorage.setItem('db_homepage_ads', JSON.stringify(next));
+        localStorage.setItem('db_homepage_ads', JSON.stringify(nextList));
       }
-      return next;
+      return nextList;
     });
-    showToast("Homepage ad slot updated", "info");
+    try {
+      await fetch('/api/db/homepage-ads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ads: nextList })
+      });
+    } catch (e) {
+      console.warn("Could not push single homepage ad update to API", e);
+    }
+    showToast("Homepage ad updated & synced", "info");
   };
 
   const activeRoleId = currentUser ? currentUser.roleId : null;

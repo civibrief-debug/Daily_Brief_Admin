@@ -67,7 +67,10 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
   const allCategories = [
     'Tech & AI',
     'Global Affairs',
+    'India & Policy',
+    'National Affairs',
     'Markets & Economy',
+    'Credit News',
     'Science & Climate',
     'Movies',
     'Lifestyle',

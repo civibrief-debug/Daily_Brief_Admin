@@ -22,6 +22,20 @@ export const categorySubSectionsMap = {
     'International Law & UN',
     'Sovereign Infrastructure'
   ],
+  'India & Policy': [
+    'Parliament & Legislation',
+    'Union Cabinet & Governance',
+    'State Assemblies & Elections',
+    'Judiciary & Legal Reforms',
+    'Strategic Defense & Security',
+    'Infrastructure & Public Policy'
+  ],
+  'National Affairs': [
+    'Governance & Public Sector',
+    'Federal Policy & States',
+    'Internal Security',
+    'Civic Infrastructure & Development'
+  ],
   'Markets & Economy': [
     'Global Stock Indices',
     'Central Banks & Interest Rates',
@@ -29,6 +43,12 @@ export const categorySubSectionsMap = {
     'Energy & Commodities',
     'Macroeconomics & Inflation',
     'Real Estate & Infrastructure'
+  ],
+  'Credit News': [
+    'Banking & Monetary Policy',
+    'Corporate Credit & Bonds',
+    'Fintech & Digital Lending',
+    'Sovereign Debt & Ratings'
   ],
   'Science & Climate': [
     'Clean Energy & Nuclear Fusion',

@@ -409,11 +409,27 @@ export default function HomepageAdPlacementPage() {
     setDragOverZoneId(null);
   };
 
-  const handleDrop = (e, zoneId) => {
+  const mapDropZoneToSlot = (zoneId) => {
+    switch (zoneId) {
+      case 'dropzone-masthead-top': return 'masthead-top';
+      case 'dropzone-hero-above': return 'hero-above';
+      case 'dropzone-hero-bottom': return 'hero-bottom';
+      case 'dropzone-feed-row-1': return 'in-feed-mid';
+      case 'dropzone-feed-row-2': return 'feed-row-2';
+      case 'dropzone-sidebar-top': return 'sidebar-top';
+      case 'dropzone-sidebar-bottom': return 'sidebar-sticky';
+      case 'dropzone-deep-dives-top': return 'deep-dives-top';
+      case 'dropzone-footer-floating': return 'footer-floating';
+      default: return (zoneId || '').replace(/^dropzone-/, '');
+    }
+  };
+
+  const handleDrop = async (e, zoneId) => {
     e.preventDefault();
     const adId = e.dataTransfer.getData('text/plain') || draggedAdId;
     if (adId) {
-      updateSingleHomepageAd(adId, { dropZoneId: zoneId });
+      const mappedSlot = mapDropZoneToSlot(zoneId);
+      await updateSingleHomepageAd(adId, { dropZoneId: zoneId, slotId: mappedSlot });
       setActiveAdId(adId);
       showToast(`Ad moved to ${HOMEPAGE_DROP_ZONES.find(z => z.id === zoneId)?.label || zoneId}`, 'success');
     }
@@ -862,7 +878,11 @@ export default function HomepageAdPlacementPage() {
               <select
                 className="form-control"
                 value={currentAd.dropZoneId}
-                onChange={(e) => updateSingleHomepageAd(currentAd.id, { dropZoneId: e.target.value })}
+                onChange={(e) => {
+                  const zId = e.target.value;
+                  const sId = mapDropZoneToSlot(zId);
+                  updateSingleHomepageAd(currentAd.id, { dropZoneId: zId, slotId: sId });
+                }}
                 style={{
                   background: 'var(--bg-surface)',
                   color: 'var(--text-main)',
