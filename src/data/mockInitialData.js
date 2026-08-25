@@ -305,7 +305,7 @@ export const INITIAL_HOMEPAGE_ARTICLE_SECTIONS = [
     zoneName: "Zone 7: Section Band 1 (Lead Feature + Horizontal Cards)",
     zoneBadge: "SECTION BAND 1",
     zoneType: "section_band",
-    sectionTitle: "National Affairs",
+    sectionTitle: "National & Global Affairs",
     category: "Global Affairs",
     selectionMode: "auto",
     pinnedArticleId: null,
@@ -313,7 +313,7 @@ export const INITIAL_HOMEPAGE_ARTICLE_SECTIONS = [
     itemCount: 4,
     sortOrder: "latest",
     enabled: true,
-    description: "Major middle-page editorial band containing a 40% lead feature card and 2 stacked horizontal cards."
+    description: "Major middle-page editorial band containing a 40% lead feature card and stacked horizontal cards."
   },
   {
     id: "zone-band-2",
@@ -332,7 +332,7 @@ export const INITIAL_HOMEPAGE_ARTICLE_SECTIONS = [
   },
   {
     id: "zone-dept-1",
-    zoneName: "Zone 9: Department Grid 1 (Business & Markets)",
+    zoneName: "Zone 9: Department Grid 1 (Markets, Economy & Credit)",
     zoneBadge: "DEPARTMENT 1",
     zoneType: "department_grid",
     sectionTitle: "Business, Markets & Economy",

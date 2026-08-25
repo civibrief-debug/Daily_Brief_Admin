@@ -1580,7 +1580,7 @@ export default function HomepageAdPlacementPage() {
                       />
                     ) : (
                       <img
-                        src={currentAd.mediaUrl}
+                        src={currentAd.mediaUrl || "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=1200&q=80"}
                         alt="Ad preview"
                         style={{
                           width: '100%',
@@ -2448,7 +2448,7 @@ function renderLiveAdCreative(ad) {
           />
         ) : (
           <img
-            src={ad.mediaUrl}
+            src={ad.mediaUrl || "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=1200&q=80"}
             alt={ad.headline || 'Ad Banner'}
             style={{ width: '100%', height: '100%', objectFit: fitMode, display: 'block', margin: '0 auto' }}
           />
@@ -2501,7 +2501,7 @@ function renderLiveAdCreative(ad) {
             />
           ) : (
             <img
-              src={ad.mediaUrl}
+              src={ad.mediaUrl || "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=1200&q=80"}
               alt={ad.headline || 'Ad'}
               style={{ width: '100%', height: '100%', objectFit: fitMode, display: 'block', margin: '0 auto' }}
             />
@@ -2545,7 +2545,7 @@ function renderLiveAdCreative(ad) {
             />
           ) : (
             <img
-              src={ad.mediaUrl}
+              src={ad.mediaUrl || "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=1200&q=80"}
               alt={ad.headline || 'Ad'}
               style={{ width: '100%', height: '100%', objectFit: fitMode, display: 'block', margin: '0 auto' }}
             />
@@ -2604,7 +2604,7 @@ function renderLiveAdCreative(ad) {
               />
             ) : (
               <img
-                src={ad.mediaUrl}
+                src={ad.mediaUrl || "https://images.unsplash.com/photo-1621416894569-0f39ed31d247?auto=format&fit=crop&w=1200&q=80"}
                 alt={ad.headline || 'Ad Media'}
                 style={{ width: '100%', height: '100%', objectFit: fitMode, display: 'block' }}
               />
