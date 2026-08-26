@@ -1,9 +1,8 @@
-"use client";
+import HomepagePlacementBuilder from '../../components/HomepagePlacementBuilder';
 
 export const runtime = 'edge';
-
-import React from 'react';
-import HomepagePlacementBuilder from '../../components/HomepagePlacementBuilder';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export default function HomepageArticlePlacementPage() {
   return <HomepagePlacementBuilder />;
