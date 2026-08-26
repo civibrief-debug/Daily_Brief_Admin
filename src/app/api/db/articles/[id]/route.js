@@ -1,45 +1,7 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import { queryD1 } from '../../../../../lib/edgeDb';
 
-function getSharedDbPath() {
-  const candidates = [
-    path.join(process.cwd(), '..', 'shared_database.json'),
-    path.join(process.cwd(), 'shared_database.json'),
-    'd:/Daily News/shared_database.json'
-  ];
-  for (const p of candidates) {
-    try {
-      if (fs.existsSync(p)) return p;
-    } catch (e) {}
-  }
-  return candidates[0];
-}
-
-function readSharedDb() {
-  const p = getSharedDbPath();
-  try {
-    if (fs.existsSync(p)) {
-      const raw = fs.readFileSync(p, 'utf8');
-      return JSON.parse(raw);
-    }
-  } catch (e) {}
-  return null;
-}
-
-function writeSharedDb(updater) {
-  const p = getSharedDbPath();
-  try {
-    let db = readSharedDb() || { articles: [] };
-    const updatedDb = updater(db);
-    fs.writeFileSync(p, JSON.stringify(updatedDb || db, null, 2), 'utf8');
-    return true;
-  } catch (e) {
-    console.error('Error writing shared_database.json:', e);
-    return false;
-  }
-}
+export const runtime = 'edge';
 
 function formatArticle(r) {
   if (!r) return null;
@@ -61,27 +23,13 @@ function formatArticle(r) {
 export async function GET(req, { params }) {
   try {
     const { id } = await params;
-
-    // 1. Try D1 if configured
-    try {
-      const rows = await queryD1('SELECT * FROM articles WHERE id = ?;', [id]);
-      if (rows && rows.length > 0) {
-        return NextResponse.json({ success: true, data: formatArticle(rows[0]) });
-      }
-    } catch (e) {}
-
-    // 2. Try shared_database.json
-    const db = readSharedDb();
-    if (db && Array.isArray(db.articles)) {
-      const found = db.articles.find(a => a.id === id || a.slug === id);
-      if (found) {
-        return NextResponse.json({ success: true, data: formatArticle(found) });
-      }
+    const rows = await queryD1('SELECT * FROM articles WHERE id = ?;', [id]);
+    if (rows && rows.length > 0) {
+      return NextResponse.json({ success: true, data: formatArticle(rows[0]) });
     }
-
     return NextResponse.json({ success: false, error: 'Article not found' }, { status: 404 });
   } catch (err) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: err?.message || 'Server error' }, { status: 500 });
   }
 }
 
@@ -174,79 +122,51 @@ export async function PUT(req, { params }) {
       updatedAt
     };
 
-    // 1. Update shared_database.json
-    writeSharedDb((db) => {
-      if (!Array.isArray(db.articles)) db.articles = [];
-      const idx = db.articles.findIndex(a => a.id === id);
-      if (idx >= 0) {
-        db.articles[idx] = { ...db.articles[idx], ...formattedArticle };
-      } else {
-        db.articles.unshift(formattedArticle);
-      }
-      return db;
-    });
-
-    // 2. Try sync to D1
-    try {
-      const sql = `
-        INSERT OR REPLACE INTO articles (
-          id, title, kicker, supertitle, category, subSection, author, authorId,
-          assignedEditorId, assignedEditorName, status, summary, content, imageUrl,
-          coverMediaType, videoUrl, photoCaption, photoCredit, coverImageCrop,
-          coverVideoCrop, coverMediaAspect, readTime, isHero, isEditorsPick,
-          isTrending, isLive, adPlacements, placeholderAdEnabled,
-          placeholderAdTargetUrl, placeholderAdHeadline, placeholderAdDescription,
-          placeholderAdCtaText, createdAt, publishedAt, updatedAt
-        ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?,
-          COALESCE((SELECT createdAt FROM articles WHERE id = ?), ?), ?, ?
-        );
-      `;
-
-      const paramsList = [
+    const sql = `
+      INSERT OR REPLACE INTO articles (
         id, title, kicker, supertitle, category, subSection, author, authorId,
         assignedEditorId, assignedEditorName, status, summary, content, imageUrl,
-        coverMediaType, videoUrl, photoCaption, photoCredit, JSON.stringify(coverImageCrop),
-        JSON.stringify(coverVideoCrop), coverMediaAspect, readTime, isHero, isEditorsPick,
-        isTrending, isLive, JSON.stringify(adPlacements), placeholderAdEnabled,
+        coverMediaType, videoUrl, photoCaption, photoCredit, coverImageCrop,
+        coverVideoCrop, coverMediaAspect, readTime, isHero, isEditorsPick,
+        isTrending, isLive, adPlacements, placeholderAdEnabled,
         placeholderAdTargetUrl, placeholderAdHeadline, placeholderAdDescription,
-        placeholderAdCtaText,
-        id, updatedAt, publishedAt, updatedAt
-      ];
+        placeholderAdCtaText, createdAt, publishedAt, updatedAt
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        COALESCE((SELECT createdAt FROM articles WHERE id = ?), ?), ?, ?
+      );
+    `;
 
-      await queryD1(sql, paramsList);
-    } catch (e) {}
+    const paramsList = [
+      id, title, kicker, supertitle, category, subSection, author, authorId,
+      assignedEditorId, assignedEditorName, status, summary, content, imageUrl,
+      coverMediaType, videoUrl, photoCaption, photoCredit, JSON.stringify(coverImageCrop),
+      JSON.stringify(coverVideoCrop), coverMediaAspect, readTime, isHero, isEditorsPick,
+      isTrending, isLive, JSON.stringify(adPlacements), placeholderAdEnabled,
+      placeholderAdTargetUrl, placeholderAdHeadline, placeholderAdDescription,
+      placeholderAdCtaText,
+      id, updatedAt, publishedAt, updatedAt
+    ];
+
+    await queryD1(sql, paramsList);
 
     return NextResponse.json({ success: true, data: formattedArticle });
   } catch (err) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: err?.message || 'Server error' }, { status: 500 });
   }
 }
 
 export async function DELETE(req, { params }) {
   try {
     const { id } = await params;
-
-    // 1. Delete from shared_database.json
-    writeSharedDb((db) => {
-      if (Array.isArray(db.articles)) {
-        db.articles = db.articles.filter(a => a.id !== id);
-      }
-      return db;
-    });
-
-    // 2. Try D1 delete
-    try {
-      await queryD1('DELETE FROM articles WHERE id = ?;', [id]);
-    } catch (e) {}
-
+    await queryD1('DELETE FROM articles WHERE id = ?;', [id]);
     return NextResponse.json({ success: true, message: 'Article deleted successfully' });
   } catch (err) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: err?.message || 'Server error' }, { status: 500 });
   }
 }

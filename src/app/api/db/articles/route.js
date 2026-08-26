@@ -1,45 +1,7 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import { queryD1 } from '../../../../lib/edgeDb';
 
-function getSharedDbPath() {
-  const candidates = [
-    path.join(process.cwd(), '..', 'shared_database.json'),
-    path.join(process.cwd(), 'shared_database.json'),
-    'd:/Daily News/shared_database.json'
-  ];
-  for (const p of candidates) {
-    try {
-      if (fs.existsSync(p)) return p;
-    } catch (e) {}
-  }
-  return candidates[0];
-}
-
-function readSharedDb() {
-  const p = getSharedDbPath();
-  try {
-    if (fs.existsSync(p)) {
-      const raw = fs.readFileSync(p, 'utf8');
-      return JSON.parse(raw);
-    }
-  } catch (e) {}
-  return null;
-}
-
-function writeSharedDb(updater) {
-  const p = getSharedDbPath();
-  try {
-    let db = readSharedDb() || { articles: [] };
-    const updatedDb = updater(db);
-    fs.writeFileSync(p, JSON.stringify(updatedDb || db, null, 2), 'utf8');
-    return true;
-  } catch (e) {
-    console.error('Error writing shared_database.json:', e);
-    return false;
-  }
-}
+export const runtime = 'edge';
 
 function formatArticle(r) {
   if (!r) return null;
@@ -64,194 +26,121 @@ export async function GET(req) {
     const category = searchParams.get('category');
     const includeDrafts = searchParams.get('includeDrafts') !== 'false';
 
-    // 1. Try D1 if configured
-    try {
-      let sql = 'SELECT * FROM articles';
-      const params = [];
-      const conditions = [];
+    let sql = 'SELECT * FROM articles';
+    const params = [];
+    const conditions = [];
 
-      if (!includeDrafts) {
-        conditions.push("status = 'Published'");
-      }
-
-      if (category && category !== 'All') {
-        conditions.push('(category = ? OR category LIKE ?)');
-        params.push(category, `%${category}%`);
-      }
-
-      if (conditions.length > 0) {
-        sql += ' WHERE ' + conditions.join(' AND ');
-      }
-
-      sql += ' ORDER BY COALESCE(updatedAt, createdAt) DESC, createdAt DESC;';
-
-      const rows = await queryD1(sql, params);
-      if (rows && rows.length > 0) {
-        const formatted = rows.map(formatArticle);
-        return NextResponse.json({ success: true, data: formatted });
-      }
-    } catch (e) {}
-
-    // 2. Fallback to shared_database.json
-    const db = readSharedDb();
-    if (db && Array.isArray(db.articles)) {
-      let result = db.articles;
-      if (!includeDrafts) {
-        result = result.filter(a => a.status === 'Published');
-      }
-      if (category && category !== 'All') {
-        const catLower = category.toLowerCase();
-        result = result.filter(a => (a.category || '').toLowerCase().includes(catLower));
-      }
-      return NextResponse.json({ success: true, data: result.map(formatArticle) });
+    if (!includeDrafts) {
+      conditions.push("status = 'Published'");
     }
 
-    return NextResponse.json({ success: true, data: [] });
+    if (category && category !== 'All') {
+      conditions.push('(category = ? OR category LIKE ?)');
+      params.push(category, `%${category}%`);
+    }
+
+    if (conditions.length > 0) {
+      sql += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    sql += ' ORDER BY COALESCE(updatedAt, createdAt) DESC, createdAt DESC;';
+
+    const rows = await queryD1(sql, params);
+    const formatted = (rows || []).map(formatArticle);
+    return NextResponse.json({ success: true, data: formatted });
   } catch (err) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: err?.message || 'Server error', data: [] }, { status: 500 });
   }
 }
 
 export async function POST(req) {
   try {
     const body = await req.json();
-
-    if (body.status === 'Published') {
-      const hasTitle = !!body.title?.trim();
-      const hasSupertitle = !!(body.kicker?.trim() || body.supertitle?.trim());
-      if (!hasTitle || !hasSupertitle) {
-        return NextResponse.json(
-          { success: false, error: 'Article cannot be published without both Supertitle (kicker) and Headline Title.' },
-          { status: 400 }
-        );
-      }
-    }
-
-    const supertitleVal = (body.kicker?.trim() || body.supertitle?.trim() || '');
-    const id = body.id || `art-${Date.now()}`;
-    const title = body.title || 'Untitled Article';
-    const kicker = supertitleVal;
-    const supertitle = supertitleVal;
-    const category = body.category || 'Technology';
-    const subSection = body.subSection || '';
-    const author = body.author || 'Staff Reporter';
-    const authorId = body.authorId || null;
-    const assignedEditorId = body.assignedEditorId || null;
-    const assignedEditorName = body.assignedEditorName || null;
-    const status = body.status || 'Pending Editor Assignment';
-    const summary = body.summary || '';
-    const content = body.content || '';
-    const imageUrl = body.imageUrl || '';
-    const coverMediaType = body.coverMediaType || (body.videoUrl ? 'video' : 'image');
-    const videoUrl = body.videoUrl || '';
-    const photoCaption = body.photoCaption || '';
-    const photoCredit = body.photoCredit || '';
-    const coverImageCrop = body.coverImageCrop || body.coverCropBox || {};
-    const coverVideoCrop = body.coverVideoCrop || {};
-    const coverMediaAspect = body.coverMediaAspect || '16:9';
-    const readTime = body.readTime || '3 min read';
-    const isHero = body.isHero ? 1 : 0;
-    const isEditorsPick = body.isEditorsPick ? 1 : 0;
-    const isTrending = body.isTrending ? 1 : 0;
-    const isLive = body.isLive ? 1 : 0;
-    const adPlacements = body.adPlacements || [];
-    const placeholderAdEnabled = body.placeholderAdEnabled ? 1 : 0;
-    const placeholderAdTargetUrl = body.placeholderAdTargetUrl || '';
-    const placeholderAdHeadline = body.placeholderAdHeadline || '';
-    const placeholderAdDescription = body.placeholderAdDescription || '';
-    const placeholderAdCtaText = body.placeholderAdCtaText || '';
-    const createdAt = body.createdAt || new Date().toISOString();
-    const publishedAt = body.status === 'Published' ? (body.publishedAt || new Date().toISOString()) : null;
-    const updatedAt = new Date().toISOString();
-
-    const formattedArticle = {
-      ...body,
-      id,
-      title,
-      kicker,
-      supertitle,
-      category,
-      subSection,
-      author,
-      authorId,
-      assignedEditorId,
-      assignedEditorName,
-      status,
-      summary,
-      content,
-      imageUrl,
-      coverMediaType,
-      videoUrl,
-      photoCaption,
-      photoCredit,
-      coverImageCrop,
-      coverVideoCrop,
-      coverMediaAspect,
-      readTime,
-      isHero: Boolean(isHero),
-      isEditorsPick: Boolean(isEditorsPick),
-      isTrending: Boolean(isTrending),
-      isLive: Boolean(isLive),
-      adPlacements,
-      placeholderAdEnabled: Boolean(placeholderAdEnabled),
-      placeholderAdTargetUrl,
-      placeholderAdHeadline,
-      placeholderAdDescription,
-      placeholderAdCtaText,
-      createdAt,
-      publishedAt,
-      updatedAt
+    const article = {
+      id: body.id || `art-${Date.now()}`,
+      title: body.title || 'Untitled Article',
+      kicker: body.kicker || '',
+      supertitle: body.supertitle || '',
+      category: body.category || 'Technology',
+      subSection: body.subSection || '',
+      author: body.author || 'Staff Reporter',
+      authorId: body.authorId || '',
+      assignedEditorId: body.assignedEditorId || '',
+      assignedEditorName: body.assignedEditorName || '',
+      status: body.status || 'Draft',
+      summary: body.summary || '',
+      content: body.content || '',
+      imageUrl: body.imageUrl || '',
+      coverMediaType: body.coverMediaType || (body.videoUrl ? 'video' : 'image'),
+      videoUrl: body.videoUrl || '',
+      photoCaption: body.photoCaption || '',
+      photoCredit: body.photoCredit || '',
+      coverImageCrop: body.coverImageCrop ? JSON.stringify(body.coverImageCrop) : null,
+      coverVideoCrop: body.coverVideoCrop ? JSON.stringify(body.coverVideoCrop) : null,
+      coverMediaAspect: body.coverMediaAspect || '16:9',
+      readTime: body.readTime || '3 min read',
+      isHero: body.isHero ? 1 : 0,
+      isEditorsPick: body.isEditorsPick ? 1 : 0,
+      isTrending: body.isTrending ? 1 : 0,
+      isLive: body.isLive ? 1 : 0,
+      adPlacements: body.adPlacements ? JSON.stringify(body.adPlacements) : '[]',
+      placeholderAdEnabled: body.placeholderAdEnabled ? 1 : 0,
+      placeholderAdTargetUrl: body.placeholderAdTargetUrl || '',
+      placeholderAdHeadline: body.placeholderAdHeadline || '',
+      placeholderAdDescription: body.placeholderAdDescription || '',
+      placeholderAdCtaText: body.placeholderAdCtaText || '',
+      createdAt: body.createdAt || new Date().toISOString(),
+      publishedAt: body.status === 'Published' ? (body.publishedAt || new Date().toISOString()) : null,
+      updatedAt: new Date().toISOString(),
+      comments: '[]',
+      editorFeedback: body.editorFeedback || '',
+      feedbackDate: body.feedbackDate || ''
     };
 
-    // 1. Write to shared_database.json
-    writeSharedDb((db) => {
-      if (!Array.isArray(db.articles)) db.articles = [];
-      const existingIdx = db.articles.findIndex(a => a.id === id);
-      if (existingIdx >= 0) {
-        db.articles[existingIdx] = formattedArticle;
-      } else {
-        db.articles.unshift(formattedArticle);
-      }
-      return db;
-    });
-
-    // 2. Try sync to D1
-    try {
-      const sql = `
-        INSERT OR REPLACE INTO articles (
-          id, title, kicker, supertitle, category, subSection, author, authorId,
-          assignedEditorId, assignedEditorName, status, summary, content, imageUrl,
-          coverMediaType, videoUrl, photoCaption, photoCredit, coverImageCrop,
-          coverVideoCrop, coverMediaAspect, readTime, isHero, isEditorsPick,
-          isTrending, isLive, adPlacements, placeholderAdEnabled,
-          placeholderAdTargetUrl, placeholderAdHeadline, placeholderAdDescription,
-          placeholderAdCtaText, createdAt, publishedAt, updatedAt
-        ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?,
-          ?, ?, ?, ?
-        );
-      `;
-
-      const params = [
+    await queryD1(
+      `INSERT INTO articles (
         id, title, kicker, supertitle, category, subSection, author, authorId,
         assignedEditorId, assignedEditorName, status, summary, content, imageUrl,
-        coverMediaType, videoUrl, photoCaption, photoCredit, JSON.stringify(coverImageCrop),
-        JSON.stringify(coverVideoCrop), coverMediaAspect, readTime, isHero, isEditorsPick,
-        isTrending, isLive, JSON.stringify(adPlacements), placeholderAdEnabled,
-        placeholderAdTargetUrl, placeholderAdHeadline, placeholderAdDescription,
-        placeholderAdCtaText, createdAt, publishedAt, updatedAt
-      ];
+        coverMediaType, videoUrl, photoCaption, photoCredit, coverImageCrop, coverVideoCrop,
+        coverMediaAspect, readTime, isHero, isEditorsPick, isTrending, isLive,
+        adPlacements, placeholderAdEnabled, placeholderAdTargetUrl, placeholderAdHeadline,
+        placeholderAdDescription, placeholderAdCtaText, createdAt, publishedAt, updatedAt,
+        comments, editorFeedback, feedbackDate
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        title = excluded.title, kicker = excluded.kicker, supertitle = excluded.supertitle,
+        category = excluded.category, subSection = excluded.subSection, author = excluded.author,
+        authorId = excluded.authorId, assignedEditorId = excluded.assignedEditorId,
+        assignedEditorName = excluded.assignedEditorName, status = excluded.status,
+        summary = excluded.summary, content = excluded.content, imageUrl = excluded.imageUrl,
+        coverMediaType = excluded.coverMediaType, videoUrl = excluded.videoUrl,
+        photoCaption = excluded.photoCaption, photoCredit = excluded.photoCredit,
+        coverImageCrop = excluded.coverImageCrop, coverVideoCrop = excluded.coverVideoCrop,
+        coverMediaAspect = excluded.coverMediaAspect, readTime = excluded.readTime,
+        isHero = excluded.isHero, isEditorsPick = excluded.isEditorsPick,
+        isTrending = excluded.isTrending, isLive = excluded.isLive,
+        adPlacements = excluded.adPlacements, placeholderAdEnabled = excluded.placeholderAdEnabled,
+        placeholderAdTargetUrl = excluded.placeholderAdTargetUrl,
+        placeholderAdHeadline = excluded.placeholderAdHeadline,
+        placeholderAdDescription = excluded.placeholderAdDescription,
+        placeholderAdCtaText = excluded.placeholderAdCtaText,
+        publishedAt = excluded.publishedAt, updatedAt = excluded.updatedAt,
+        editorFeedback = excluded.editorFeedback, feedbackDate = excluded.feedbackDate;`,
+      [
+        article.id, article.title, article.kicker, article.supertitle, article.category, article.subSection,
+        article.author, article.authorId, article.assignedEditorId, article.assignedEditorName, article.status,
+        article.summary, article.content, article.imageUrl, article.coverMediaType, article.videoUrl,
+        article.photoCaption, article.photoCredit, article.coverImageCrop, article.coverVideoCrop,
+        article.coverMediaAspect, article.readTime, article.isHero, article.isEditorsPick, article.isTrending,
+        article.isLive, article.adPlacements, article.placeholderAdEnabled, article.placeholderAdTargetUrl,
+        article.placeholderAdHeadline, article.placeholderAdDescription, article.placeholderAdCtaText,
+        article.createdAt, article.publishedAt, article.updatedAt, article.comments,
+        article.editorFeedback, article.feedbackDate
+      ]
+    );
 
-      await queryD1(sql, params);
-    } catch (e) {}
-
-    return NextResponse.json({ success: true, data: formattedArticle });
+    return NextResponse.json({ success: true, data: formatArticle(article) });
   } catch (err) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: err?.message || 'Server error' }, { status: 500 });
   }
 }

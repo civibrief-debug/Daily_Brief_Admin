@@ -1,5 +1,7 @@
 "use client";
 
+export const runtime = 'edge';
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import RoleBadge from '../../components/RoleBadge';
