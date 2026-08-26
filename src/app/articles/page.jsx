@@ -1,9 +1,5 @@
 "use client";
 
-export const runtime = 'edge';
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 import React, { useState, useRef, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import RoleBadge from '../../components/RoleBadge';
