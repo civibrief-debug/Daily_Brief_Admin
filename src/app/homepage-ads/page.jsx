@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import RoleBadge from '../../components/RoleBadge';
+import { BASE_TEMPLATE_DEFINITIONS, ALL_CATEGORIES } from '../../components/HomepagePlacementBuilder';
 import {
   Megaphone,
   Save,
@@ -36,9 +37,20 @@ import {
   Play,
   LayoutGrid,
   Columns,
-  FileText
+  FileText,
+  Search,
+  BookOpen,
+  Flame,
+  TrendingUp,
+  X
 } from 'lucide-react';
 import ContinuousCoverVideo from '../../components/ContinuousCoverVideo';
+import {
+  formatCoverImageUrl,
+  isArticleCoverVideo,
+  getArticleCoverVideoUrl,
+  getDefaultArticleImage
+} from '../../lib/videoUtils';
 
 export const HOMEPAGE_DROP_ZONES = [
   { id: 'dropzone-masthead-top', name: 'Zone 1: Top Banner / Leaderboard (Natural Scroll)', label: 'Top Banner', defaultFormat: 'leaderboard' },
@@ -213,7 +225,7 @@ export const HOMEPAGE_AD_PRESETS = [
 ];
 
 export default function HomepageAdPlacementPage() {
-  const { homepageAds, updateHomepageAds, updateSingleHomepageAd, showToast } = useAdmin();
+  const { homepageAds, updateHomepageAds, updateSingleHomepageAd, homepageArticleSections, articles, showToast } = useAdmin();
 
   const [activeTab, setActiveTab] = useState('studio'); // 'studio', 'live_view', 'mobile_view'
   const [activeAdId, setActiveAdId] = useState(null);
@@ -222,6 +234,20 @@ export default function HomepageAdPlacementPage() {
   const [dragOverZoneId, setDragOverZoneId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
+  const [viewingArticle, setViewingArticle] = useState(null);
+
+  // Article Template Instances from homepage builder or factory fallback
+  const articleInstances = useMemo(() => {
+    if (Array.isArray(homepageArticleSections) && homepageArticleSections.length > 0 && (homepageArticleSections[0]?.templateType || homepageArticleSections[0]?.mainStory)) {
+      return homepageArticleSections;
+    }
+    return [
+      BASE_TEMPLATE_DEFINITIONS[0].createInstance("Dominant Hero Lead Stage", ["Top Stories", "Science & Climate"], "left"),
+      BASE_TEMPLATE_DEFINITIONS[1].createInstance("Second Major Story Block", ["Global Affairs", "Markets & Economy"], "center"),
+      BASE_TEMPLATE_DEFINITIONS[2].createInstance("Top News Stack Feed", ["Credit News", "Top Stories"], "center"),
+      BASE_TEMPLATE_DEFINITIONS[3].createInstance("Editorial Opinion & Intelligence Rail", ["Opinion & Essays", "Editorial"], "right")
+    ];
+  }, [homepageArticleSections]);
 
   const handleSaveLiveHomepage = async () => {
     try {
@@ -1728,37 +1754,228 @@ export default function HomepageAdPlacementPage() {
 
               {/* SIMULATED HOMEPAGE MASTHEAD */}
               <div style={{ margin: '1.5rem 0', padding: '1.25rem', background: 'var(--bg-surface)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', flexWrap: 'wrap', gap: '8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Search size={13} /> Search Newsroom
+                    </span>
+                  </div>
                   <div style={{ fontFamily: 'var(--font-serif)', fontSize: isMobile ? '1.4rem' : '2rem', fontWeight: 900, letterSpacing: '2px', color: 'var(--text-main)' }}>DAILY ⚜ BRIEF</div>
-                  <div style={{ display: 'flex', gap: '1rem', fontSize: '11px', color: 'var(--text-muted)' }}>
-                    <span>Top Stories</span>
+                  <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center', fontSize: '11px', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                    <span style={{ color: '#ef4444', fontWeight: 800 }}>Top Stories</span>
                     <span>Tech & AI</span>
                     <span>Markets</span>
                     <span style={{ color: 'var(--accent-blue, #3b82f6)' }}>Deep Dives 💎</span>
+                    <span style={{ background: '#b90014', color: '#ffffff', fontSize: '9px', fontWeight: 800, padding: '3px 8px', borderRadius: '3px' }}>SUBSCRIBE</span>
                   </div>
                 </div>
 
                 {/* ZONE 2: ABOVE HERO SPOTLIGHT */}
                 {renderInteractiveDropZone('dropzone-hero-above', 'Above Hero Spotlight (Top Stories)', adPlacements, isLiveReader, activeAdId, setActiveAdId, handleDragStart, handleDragOver, handleDragLeave, handleDrop, dragOverZoneId, handleStartResize, handleToggleActive, handleRemoveAd)}
 
-                {/* Top 4 Stories Simulation */}
-                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.8fr 1.2fr', gap: '16px', minHeight: '280px' }}>
-                  <div style={{ background: 'var(--bg-card)', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ flex: 1, background: 'url(https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80) center/cover' }} />
-                    <div style={{ padding: '14px' }}>
-                      <div style={{ fontSize: '10px', color: 'var(--accent-green, #10b981)', fontWeight: 800 }}>TECHNOLOGY • AI</div>
-                      <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)', marginTop: '2px' }}>The Architecture of Tomorrow: Next-Gen Compute Models</div>
-                    </div>
+                {/* Promo Strip & Breaking Ticker */}
+                <div style={{ background: 'linear-gradient(90deg, #b90014 0%, #7f1d1d 100%)', padding: '6px 12px', borderRadius: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '12px 0 8px 0', fontSize: '11px', color: '#ffffff', flexWrap: 'wrap', gap: '4px' }}>
+                  <span><strong>PRO EDITION</strong> • Gift Yourself Financial & Geopolitical Clarity with Daily Brief Prime</span>
+                  <span style={{ fontWeight: 800 }}>START FREE TRIAL @ ₹0 ↗</span>
+                </div>
+                <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '18px', fontSize: '11.5px', flexWrap: 'wrap' }}>
+                  <span style={{ background: '#ef4444', color: '#ffffff', fontSize: '9px', fontWeight: 900, padding: '2px 6px', borderRadius: '3px' }}>BREAKING 24/7</span>
+                  <span style={{ color: 'var(--text-main)', flex: 1 }}>ENERGY TRANSITION: European Union approves €42 billion green hydrogen infrastructure mandate.</span>
+                  <span style={{ color: '#b90014', fontWeight: 800 }}>TODAY'S E-PAPER 📰</span>
+                </div>
+
+                {/* 3-COLUMN NEWSPAPER BROADSHEET (42% | 32% | 26%) */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: isMobile ? '1fr' : '4.2fr 3.2fr 2.6fr',
+                  gap: '18px',
+                  marginBottom: '16px'
+                }}>
+                  {/* COLUMN 1: Hero Lead Stage */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {articleInstances.filter(i => i.column === 'left' || (!i.column && i.templateType === 'hero_lead')).map((inst) => (
+                      <div key={inst.instanceId} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '9px', fontWeight: 800, background: inst.badgeColor || '#2563eb', color: '#ffffff', padding: '2px 6px', borderRadius: '3px' }}>
+                            {inst.badge || 'HERO LEAD'}
+                          </span>
+                          <span style={{ fontSize: '11.5px', fontWeight: 800, color: 'var(--text-main)' }}>
+                            {inst.sectionTitle}
+                          </span>
+                        </div>
+
+                        {/* Hero Lead Main Card */}
+                        <article
+                          onClick={() => setViewingArticle(inst.mainStory)}
+                          style={{
+                            background: 'var(--bg-card)',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border-color)',
+                            overflow: 'hidden',
+                            cursor: 'pointer',
+                            transition: 'transform 0.15s ease',
+                            boxShadow: '0 4px 14px rgba(0,0,0,0.1)'
+                          }}
+                        >
+                          <div style={{ height: '220px', position: 'relative', overflow: 'hidden' }}>
+                            {isArticleCoverVideo(inst.mainStory) ? (
+                              <ContinuousCoverVideo
+                                src={getArticleCoverVideoUrl(inst.mainStory)}
+                                poster={formatCoverImageUrl(inst.mainStory?.imageUrl, inst.mainStory)}
+                                autoPlay={true}
+                                muted={true}
+                                loop={true}
+                                controls={false}
+                                playsInline={true}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              />
+                            ) : (
+                              <img src={formatCoverImageUrl(inst.mainStory?.imageUrl, inst.mainStory)} alt={inst.mainStory?.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            )}
+                            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.2) 60%, transparent 100%)', pointerEvents: 'none' }} />
+                            <div style={{ position: 'absolute', bottom: '12px', left: '14px', right: '14px' }}>
+                              <span style={{ fontSize: '9px', fontWeight: 800, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.8px', display: 'block', marginBottom: '2px' }}>
+                                {inst.mainStory?.category}
+                              </span>
+                              <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '15px', fontWeight: 800, color: '#ffffff', lineHeight: 1.25, margin: '0 0 4px 0' }}>
+                                {inst.mainStory?.title}
+                              </h3>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <span style={{ fontSize: '10px', color: '#94a3b8' }}>By {inst.mainStory?.author}</span>
+                                <span style={{ background: 'rgba(56, 189, 248, 0.25)', color: '#38bdf8', fontSize: '9.5px', fontWeight: 800, padding: '2px 6px', borderRadius: '3px' }}>
+                                  Read Full Story ↗
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </article>
+
+                        {/* Sub-Stories */}
+                        {Array.isArray(inst.subStories) && inst.subStories.length > 0 && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                            {inst.subStories.map((sub, sIdx) => (
+                              <div
+                                key={sub.id || sIdx}
+                                onClick={() => setViewingArticle(sub)}
+                                style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '8px', cursor: 'pointer' }}
+                              >
+                                <img src={sub.imageUrl} alt={sub.title} style={{ width: '100%', height: '75px', objectFit: 'cover', borderRadius: '4px', marginBottom: '6px' }} />
+                                <span style={{ fontSize: '8px', fontWeight: 800, color: '#ef4444', textTransform: 'uppercase' }}>{sub.category}</span>
+                                <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-main)', lineHeight: 1.25, marginTop: '2px' }}>{sub.title}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateRows: 'repeat(4, 1fr)', gap: '8px' }}>
-                    {[1, 2, 3, 4].map(idx => (
-                      <div key={`sample-side-${idx}`} style={{ background: 'var(--bg-card)', borderRadius: '6px', padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid var(--border-color)' }}>
-                        <div>
-                          <div style={{ fontSize: '9px', color: 'var(--accent-green, #10b981)', fontWeight: 700 }}>NEWS 0{idx}</div>
-                          <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)' }}>Story Headline 0{idx} Preview Title</div>
+                  {/* COLUMN 2: Second Lead & Stacked Feeds */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {articleInstances.filter(i => i.column === 'center' || (!i.column && (i.templateType === 'hero_second_lead' || i.templateType === 'hero_stacked'))).map((inst) => (
+                      <div key={inst.instanceId} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '9px', fontWeight: 800, background: inst.badgeColor || '#0891b2', color: '#ffffff', padding: '2px 6px', borderRadius: '3px' }}>
+                            {inst.badge || 'SECOND LEAD'}
+                          </span>
+                          <span style={{ fontSize: '11.5px', fontWeight: 800, color: 'var(--text-main)' }}>
+                            {inst.sectionTitle}
+                          </span>
                         </div>
-                        <div style={{ width: '55px', height: '36px', background: 'var(--bg-surface-hover)', borderRadius: '4px', flexShrink: 0 }} />
+
+                        {inst.templateType === 'hero_second_lead' && (
+                          <article
+                            onClick={() => setViewingArticle(inst.mainStory)}
+                            style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', cursor: 'pointer' }}
+                          >
+                            <img src={inst.mainStory?.imageUrl} alt={inst.mainStory?.title} style={{ width: '100%', height: '110px', objectFit: 'cover' }} />
+                            <div style={{ padding: '10px' }}>
+                              <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#ef4444', textTransform: 'uppercase' }}>{inst.mainStory?.category}</span>
+                              <h4 style={{ fontFamily: 'var(--font-serif)', fontSize: '13px', fontWeight: 800, color: 'var(--text-main)', margin: '2px 0 4px 0', lineHeight: 1.25 }}>
+                                {inst.mainStory?.title}
+                              </h4>
+                              <p style={{ fontSize: '10px', color: 'var(--text-muted)', margin: '0 0 6px 0', lineHeight: 1.35 }}>
+                                {inst.mainStory?.subtitle}
+                              </p>
+                              <span style={{ fontSize: '9.5px', color: 'var(--text-secondary)' }}>By {inst.mainStory?.author}</span>
+                            </div>
+                          </article>
+                        )}
+
+                        {inst.templateType === 'hero_stacked' && (
+                          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {(inst.stories || []).map((st, sIdx) => (
+                              <div
+                                key={st.id || sIdx}
+                                onClick={() => setViewingArticle(st)}
+                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '4px', cursor: 'pointer', borderBottom: sIdx < inst.stories.length - 1 ? '1px solid var(--border-color)' : 'none' }}
+                              >
+                                <div style={{ minWidth: 0 }}>
+                                  <span style={{ fontSize: '8px', fontWeight: 800, color: '#ef4444', textTransform: 'uppercase' }}>{st.category}</span>
+                                  <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{st.title}</div>
+                                  <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{st.author}</span>
+                                </div>
+                                <img src={st.imageUrl} alt={st.title} style={{ width: '42px', height: '32px', objectFit: 'cover', borderRadius: '3px', flexShrink: 0 }} />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* COLUMN 3: Right Column Opinion & Timeline */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {articleInstances.filter(i => i.column === 'right' || (!i.column && i.templateType === 'opinion')).map((inst) => (
+                      <div key={inst.instanceId} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {/* Opinion Box */}
+                        <div
+                          onClick={() => setViewingArticle(inst.editorialOpinion)}
+                          style={{ background: 'var(--bg-card)', border: '2px solid #ca8a04', borderRadius: '8px', padding: '12px', cursor: 'pointer' }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#d4af37' }} />
+                            <span style={{ fontSize: '9px', fontWeight: 800, color: '#d4af37', letterSpacing: '0.8px' }}>EDITORIAL OPINION</span>
+                          </div>
+                          <h4 style={{ fontFamily: 'var(--font-serif)', fontSize: '12.5px', fontWeight: 800, color: 'var(--text-main)', margin: '0 0 4px 0', lineHeight: 1.25 }}>
+                            {inst.editorialOpinion?.title}
+                          </h4>
+                          <p style={{ fontSize: '10px', color: 'var(--text-muted)', margin: '0 0 6px 0', lineHeight: 1.3 }}>
+                            {inst.editorialOpinion?.deck}
+                          </p>
+                          <span style={{ fontSize: '9px', fontWeight: 800, color: '#ef4444' }}>{inst.editorialOpinion?.ctaText || 'READ EDITORIALS →'}</span>
+                        </div>
+
+                        {/* ZONE 6: SIDEBAR TOP */}
+                        {renderInteractiveDropZone('dropzone-sidebar-top', 'Right Sidebar (Above Intelligence)', adPlacements, isLiveReader, activeAdId, setActiveAdId, handleDragStart, handleDragOver, handleDragLeave, handleDrop, dragOverZoneId, handleStartResize, handleToggleActive, handleRemoveAd)}
+
+                        {/* Intelligence Timeline */}
+                        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                            <span style={{ fontSize: '9px', fontWeight: 800, color: '#ef4444', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Flame size={11} /> {inst.intelligenceStream?.badge || 'LATEST INTELLIGENCE ⚡'}
+                            </span>
+                            <span style={{ fontSize: '8.5px', color: 'var(--text-muted)' }}>{inst.intelligenceStream?.updatedLabel || 'UPDATED 2M AGO'}</span>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {(inst.intelligenceStream?.items || []).slice(0, 3).map((it, iIdx) => (
+                              <div key={it.id || iIdx} style={{ borderLeft: '2px solid var(--border-color-strong)', paddingLeft: '6px' }}>
+                                <span style={{ fontSize: '8px', fontWeight: 800, color: '#ef4444' }}>{it.time}</span>
+                                <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', lineHeight: 1.25 }}>{it.text}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* ZONE 7: SIDEBAR BOTTOM */}
+                        {renderInteractiveDropZone('dropzone-sidebar-bottom', 'Right Sidebar (Below Intelligence)', adPlacements, isLiveReader, activeAdId, setActiveAdId, handleDragStart, handleDragOver, handleDragLeave, handleDrop, dragOverZoneId, handleStartResize, handleToggleActive, handleRemoveAd)}
+
+                        {/* Sponsored Showcase */}
+                        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '8px' }}>
+                          <span style={{ fontSize: '8px', fontWeight: 800, color: '#ef4444' }}>{inst.sponsoredShowcase?.badge}</span>
+                          <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-main)', margin: '2px 0' }}>{inst.sponsoredShowcase?.headline}</div>
+                          <div style={{ fontSize: '9.5px', color: 'var(--text-muted)' }}>{inst.sponsoredShowcase?.subtext}</div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1766,64 +1983,78 @@ export default function HomepageAdPlacementPage() {
               </div>
 
               {/* ZONE 3: HERO BOTTOM BILLBOARD */}
-              {renderInteractiveDropZone('dropzone-hero-bottom', 'Below Hero Section (Billboard Zone)', adPlacements, isLiveReader, activeAdId, setActiveAdId, handleDragStart, handleDragOver, handleDragLeave, handleDrop, dragOverZoneId, handleStartResize, handleToggleActive, handleRemoveAd)}
+              {renderInteractiveDropZone('dropzone-hero-bottom', 'Below Hero Section (Mid-Page Billboard)', adPlacements, isLiveReader, activeAdId, setActiveAdId, handleDragStart, handleDragOver, handleDragLeave, handleDrop, dragOverZoneId, handleStartResize, handleToggleActive, handleRemoveAd)}
 
-              {/* MAIN FEED & SIDEBAR GRID SIMULATION */}
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: '24px', margin: '2rem 0' }}>
-                {/* News Feed */}
+              {/* MAIN FEED & SECTION BANDS GRID */}
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '2fr 1fr', gap: '20px', margin: '20px 0' }}>
+                {/* News Feed Stream with Real Articles */}
                 <div>
-                  <div style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-main)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span>Latest Intelligence Feed</span>
+                  <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-main)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                    <span>| National & Global Affairs</span>
                   </div>
 
                   {/* Feed Row 1 */}
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '14px', marginBottom: '16px' }}>
-                    <div style={{ background: 'var(--bg-surface)', borderRadius: '8px', padding: '12px', border: '1px solid var(--border-color)' }}>
-                      <div style={{ width: '100%', height: '100px', background: 'url(https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=400&q=80) center/cover', borderRadius: '6px', marginBottom: '8px' }} />
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }}>Orbital Manufacturing Hubs: Commercial Space Expansion</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                    <div 
+                      onClick={() => setViewingArticle({ title: "Orbital Manufacturing Hubs: Commercial Space Expansion", category: "Global Affairs", author: "Vikram Malhotra", subtitle: "Zero-gravity fiber optic production and organoid crystallization attract $15B.", imageUrl: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80" })}
+                      style={{ background: 'var(--bg-surface)', borderRadius: '8px', padding: '10px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                    >
+                      <img src="https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=400&q=80" alt="News" style={{ width: '100%', height: '90px', objectFit: 'cover', borderRadius: '4px', marginBottom: '6px' }} />
+                      <span style={{ fontSize: '8px', fontWeight: 800, color: '#ef4444' }}>SPACE INDUSTRY</span>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)', marginTop: '2px' }}>Orbital Manufacturing Hubs: Commercial Space Expansion</div>
                     </div>
-                    <div style={{ background: 'var(--bg-surface)', borderRadius: '8px', padding: '12px', border: '1px solid var(--border-color)' }}>
-                      <div style={{ width: '100%', height: '100px', background: 'url(https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=400&q=80) center/cover', borderRadius: '6px', marginBottom: '8px' }} />
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }}>Tokamak Plasma Milestone: High-Temperature Magnets</div>
+                    <div 
+                      onClick={() => setViewingArticle({ title: "Tokamak Plasma Milestone: High-Temperature Superconducting Magnets", category: "Science & Climate", author: "Dr. Arvind Menon", subtitle: "Private fusion startups record 120-second plasma stability.", imageUrl: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=600&q=80" })}
+                      style={{ background: 'var(--bg-surface)', borderRadius: '8px', padding: '10px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                    >
+                      <img src="https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&w=400&q=80" alt="News" style={{ width: '100%', height: '90px', objectFit: 'cover', borderRadius: '4px', marginBottom: '6px' }} />
+                      <span style={{ fontSize: '8px', fontWeight: 800, color: '#ef4444' }}>PHYSICS</span>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)', marginTop: '2px' }}>Tokamak Plasma Milestone: High-Temperature Magnets</div>
                     </div>
                   </div>
 
                   {/* ZONE 4: FEED ROW 1 */}
-                  {renderInteractiveDropZone('dropzone-feed-row-1', 'News Feed Stream (After Article 2)', adPlacements, isLiveReader, activeAdId, setActiveAdId, handleDragStart, handleDragOver, handleDragLeave, handleDrop, dragOverZoneId, handleStartResize, handleToggleActive, handleRemoveAd)}
+                  {renderInteractiveDropZone('dropzone-feed-row-1', 'News Feed Stream (In-Feed Native)', adPlacements, isLiveReader, activeAdId, setActiveAdId, handleDragStart, handleDragOver, handleDragLeave, handleDrop, dragOverZoneId, handleStartResize, handleToggleActive, handleRemoveAd)}
 
                   {/* Feed Row 2 */}
-                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '14px', marginTop: '16px', marginBottom: '16px' }}>
-                    <div style={{ background: 'var(--bg-surface)', borderRadius: '8px', padding: '12px', border: '1px solid var(--border-color)' }}>
-                      <div style={{ width: '100%', height: '100px', background: 'url(https://images.unsplash.com/photo-1509228468518-180dd4864904?auto=format&fit=crop&w=400&q=80) center/cover', borderRadius: '6px', marginBottom: '8px' }} />
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }}>RNA Synthetic Therapeutics: Gene Therapy Evolution</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '12px', marginTop: '14px', marginBottom: '14px' }}>
+                    <div 
+                      onClick={() => setViewingArticle({ title: "RNA Synthetic Therapeutics: Gene Therapy Evolution", category: "Tech & AI", author: "Staff Reporter", subtitle: "Targeted delivery vectors achieve 90% in-vivo expression.", imageUrl: "https://images.unsplash.com/photo-1509228468518-180dd4864904?auto=format&fit=crop&w=600&q=80" })}
+                      style={{ background: 'var(--bg-surface)', borderRadius: '8px', padding: '10px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                    >
+                      <img src="https://images.unsplash.com/photo-1509228468518-180dd4864904?auto=format&fit=crop&w=400&q=80" alt="News" style={{ width: '100%', height: '90px', objectFit: 'cover', borderRadius: '4px', marginBottom: '6px' }} />
+                      <span style={{ fontSize: '8px', fontWeight: 800, color: '#38bdf8' }}>BIOTECH</span>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)', marginTop: '2px' }}>RNA Synthetic Therapeutics: Gene Therapy Evolution</div>
                     </div>
-                    <div style={{ background: 'var(--bg-surface)', borderRadius: '8px', padding: '12px', border: '1px solid var(--border-color)' }}>
-                      <div style={{ width: '100%', height: '100px', background: 'url(https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=400&q=80) center/cover', borderRadius: '6px', marginBottom: '8px' }} />
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)' }}>Next-Gen Photovoltaics: Transcontinental Supergrids</div>
+                    <div 
+                      onClick={() => setViewingArticle({ title: "Next-Gen Photovoltaics: Transcontinental Supergrids", category: "Science & Climate", author: "Staff Reporter", subtitle: "Perovskite-silicon tandem cells surpass 33% efficiency thresholds.", imageUrl: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=600&q=80" })}
+                      style={{ background: 'var(--bg-surface)', borderRadius: '8px', padding: '10px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
+                    >
+                      <img src="https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=400&q=80" alt="News" style={{ width: '100%', height: '90px', objectFit: 'cover', borderRadius: '4px', marginBottom: '6px' }} />
+                      <span style={{ fontSize: '8px', fontWeight: 800, color: '#38bdf8' }}>CLEANTECH</span>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)', marginTop: '2px' }}>Next-Gen Photovoltaics: Transcontinental Supergrids</div>
                     </div>
                   </div>
 
                   {/* ZONE 5: FEED ROW 2 */}
-                  {renderInteractiveDropZone('dropzone-feed-row-2', 'News Feed Stream (After Article 4)', adPlacements, isLiveReader, activeAdId, setActiveAdId, handleDragStart, handleDragOver, handleDragLeave, handleDrop, dragOverZoneId, handleStartResize, handleToggleActive, handleRemoveAd)}
+                  {renderInteractiveDropZone('dropzone-feed-row-2', 'News Feed Stream (Feed Position 2)', adPlacements, isLiveReader, activeAdId, setActiveAdId, handleDragStart, handleDragOver, handleDragLeave, handleDrop, dragOverZoneId, handleStartResize, handleToggleActive, handleRemoveAd)}
                 </div>
 
                 {/* Sidebar Column */}
                 <div>
-                  {/* ZONE 6: SIDEBAR TOP */}
-                  {renderInteractiveDropZone('dropzone-sidebar-top', 'Right Sidebar (Above Most Read)', adPlacements, isLiveReader, activeAdId, setActiveAdId, handleDragStart, handleDragOver, handleDragLeave, handleDrop, dragOverZoneId, handleStartResize, handleToggleActive, handleRemoveAd)}
-
-                  <div style={{ background: 'var(--bg-surface)', borderRadius: '8px', padding: '16px', border: '1px solid var(--border-color)', margin: '14px 0' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 800, color: 'var(--accent-amber, #f59e0b)', marginBottom: '12px' }}>🔥 Most Read Today</div>
-                    {[1, 2, 3].map(i => (
-                      <div key={`side-most-${i}`} style={{ display: 'flex', gap: '10px', marginBottom: '10px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-                        <span style={{ color: 'var(--accent-green, #10b981)', fontWeight: 800 }}>0{i}</span>
-                        <span>Global Microchip Supply Trends 2026</span>
+                  <div style={{ background: 'var(--bg-surface)', borderRadius: '8px', padding: '14px', border: '1px solid var(--border-color)', marginBottom: '14px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--accent-amber, #f59e0b)', marginBottom: '10px' }}>🔥 Most Read Today</div>
+                    {[
+                      { rank: '01', title: 'Global Microchip Supply Trends 2026' },
+                      { rank: '02', title: 'Central Banks Sovereign Reserves Reallocation' },
+                      { rank: '03', title: 'Fusion Net-Energy Power Grid Timelines' }
+                    ].map(item => (
+                      <div key={item.rank} style={{ display: 'flex', gap: '8px', marginBottom: '8px', fontSize: '11.5px', color: 'var(--text-secondary)' }}>
+                        <span style={{ color: 'var(--accent-green, #10b981)', fontWeight: 800 }}>{item.rank}</span>
+                        <span>{item.title}</span>
                       </div>
                     ))}
                   </div>
-
-                  {/* ZONE 7: SIDEBAR BOTTOM */}
-                  {renderInteractiveDropZone('dropzone-sidebar-bottom', 'Right Sidebar (Below Most Read)', adPlacements, isLiveReader, activeAdId, setActiveAdId, handleDragStart, handleDragOver, handleDragLeave, handleDrop, dragOverZoneId, handleStartResize, handleToggleActive, handleRemoveAd)}
                 </div>
               </div>
 
@@ -1831,12 +2062,12 @@ export default function HomepageAdPlacementPage() {
               {renderInteractiveDropZone('dropzone-deep-dives-top', 'Deep Dives 💎 Investigations Header Banner', adPlacements, isLiveReader, activeAdId, setActiveAdId, handleDragStart, handleDragOver, handleDragLeave, handleDrop, dragOverZoneId, handleStartResize, handleToggleActive, handleRemoveAd)}
 
               {/* Deep Dives Section Simulation */}
-              <div style={{ marginTop: '1.5rem', padding: '1.5rem', background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%)', borderRadius: '12px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8', fontWeight: 800, fontSize: '15px', marginBottom: '6px' }}>
-                  <span>💎 DEEP DIVES (Subscribers Exclusive)</span>
+              <div style={{ marginTop: '1.25rem', padding: '1.25rem', background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.1) 0%, rgba(99, 102, 241, 0.05) 100%)', borderRadius: '10px', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8', fontWeight: 800, fontSize: '14px', marginBottom: '4px' }}>
+                  <span>💎 DEEP DIVES (Subscribers Exclusive Investigative Series)</span>
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  In-depth investigative briefings and comprehensive long-form reports reserved exclusively for active subscribers.
+                <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>
+                  In-depth investigative briefings, market forensic audits, and comprehensive long-form reports reserved exclusively for active subscribers.
                 </div>
               </div>
 
@@ -1966,6 +2197,72 @@ export default function HomepageAdPlacementPage() {
 
         </div>
       </div>
+
+      {/* SUPER ADMIN WHOLE ARTICLE READER MODAL */}
+      {viewingArticle && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10000, padding: '20px' }}>
+          <div style={{ background: '#0d1420', border: '1px solid #26374d', borderRadius: '12px', width: '100%', maxWidth: '800px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 25px 60px rgba(0,0,0,0.7)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', background: '#080d14', borderBottom: '1px solid #1e293b' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ background: '#b90014', color: '#ffffff', fontSize: '10px', fontWeight: 900, padding: '3px 8px', borderRadius: '4px', textTransform: 'uppercase' }}>
+                  {viewingArticle.category || 'NEWS'}
+                </span>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: '#94a3b8' }}>
+                  Super Admin Whole Article Reader
+                </span>
+              </div>
+              <button onClick={() => setViewingArticle(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><X size={20} /></button>
+            </div>
+
+            <div style={{ padding: '24px 32px', overflowY: 'auto', flex: 1 }}>
+              <h2 style={{ fontFamily: 'Georgia, serif', fontSize: '24px', fontWeight: 900, color: '#ffffff', lineHeight: 1.3, margin: '0 0 12px 0' }}>
+                {viewingArticle.title}
+              </h2>
+              {viewingArticle.subtitle && (
+                <p style={{ fontSize: '14px', color: '#94a3b8', fontStyle: 'italic', margin: '0 0 16px 0', lineHeight: 1.4 }}>
+                  {viewingArticle.subtitle}
+                </p>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '12px', color: '#64748b', borderBottom: '1px solid #1e293b', paddingBottom: '14px', marginBottom: '20px' }}>
+                <span>By <strong style={{ color: '#f8fafc' }}>{viewingArticle.author || 'Staff Reporter'}</strong></span>
+                <span>•</span>
+                <span>{viewingArticle.readTime || '5 min read'}</span>
+                <span>•</span>
+                <span style={{ color: '#10b981' }}>Live Editorial Sync</span>
+              </div>
+
+              {isArticleCoverVideo(viewingArticle) ? (
+                <div style={{ width: '100%', height: '340px', overflow: 'hidden', borderRadius: '8px', marginBottom: '20px', background: '#000000' }}>
+                  <ContinuousCoverVideo
+                    src={getArticleCoverVideoUrl(viewingArticle)}
+                    poster={formatCoverImageUrl(viewingArticle.imageUrl, viewingArticle)}
+                    autoPlay={true}
+                    muted={false}
+                    loop={true}
+                    controls={true}
+                    playsInline={true}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                </div>
+              ) : viewingArticle.imageUrl ? (
+                <div style={{ width: '100%', maxHeight: '340px', overflow: 'hidden', borderRadius: '8px', marginBottom: '20px' }}>
+                  <img src={formatCoverImageUrl(viewingArticle.imageUrl, viewingArticle)} alt={viewingArticle.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+              ) : null}
+
+              <div style={{ fontSize: '14.5px', color: '#cbd5e1', lineHeight: 1.7, whiteSpace: 'pre-line' }}>
+                {viewingArticle.content || viewingArticle.subtitle || viewingArticle.deck || "Complete verified text from the published database article. Super admins can audit full reading length and multimedia placement directly within the live layout."}
+              </div>
+            </div>
+
+            <div style={{ padding: '14px 24px', background: '#080d14', borderTop: '1px solid #1e293b', display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setViewingArticle(null)} style={{ background: '#2563eb', color: '#ffffff', border: 'none', padding: '8px 20px', borderRadius: '6px', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
+                Close Reader
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

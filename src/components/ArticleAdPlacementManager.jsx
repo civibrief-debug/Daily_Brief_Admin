@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { useAdmin } from '../context/AdminContext';
 import ContinuousCoverVideo from './ContinuousCoverVideo';
+import { isArticleCoverVideo, getArticleCoverVideoUrl } from '../lib/videoUtils';
 
 // Helper to extract embed video URL (YouTube, Vimeo, etc.) with zero controls & continuous loop
 export const parseVideoEmbedUrl = (rawUrl) => {
@@ -2453,13 +2454,15 @@ export default function ArticleAdPlacementManager({
                   marginTop: '12px',
                   border: '1px solid rgba(255, 255, 255, 0.1)'
                 }}>
-                  {formData.coverMediaType === 'video' && formData.videoUrl ? (
+                  {((formData.coverMediaType === 'video' && formData.videoUrl) || isArticleCoverVideo(formData)) ? (
                     <ContinuousCoverVideo
-                      src={formData.videoUrl}
+                      src={getArticleCoverVideoUrl(formData) || formData.videoUrl}
+                      poster={formData.imageUrl}
                       controls={false}
                       autoPlay={true}
                       loop={true}
                       muted={true}
+                      playsInline={true}
                       style={{ width: '100%', height: '200px', objectFit: 'cover' }}
                     />
                   ) : (
@@ -2809,13 +2812,15 @@ export default function ArticleAdPlacementManager({
             {/* Cover Media */}
             {(formData.imageUrl || formData.videoUrl) && (
               <div style={{ borderRadius: '8px', overflow: 'hidden', marginBottom: '24px' }}>
-                {formData.coverMediaType === 'video' && formData.videoUrl ? (
+                {((formData.coverMediaType === 'video' && formData.videoUrl) || isArticleCoverVideo(formData)) ? (
                   <ContinuousCoverVideo
-                    src={formData.videoUrl}
+                    src={getArticleCoverVideoUrl(formData) || formData.videoUrl}
+                    poster={formData.imageUrl}
                     controls={true}
                     autoPlay={true}
                     loop={true}
                     muted={true}
+                    playsInline={true}
                     style={{ width: '100%', height: '380px', objectFit: 'cover' }}
                   />
                 ) : (

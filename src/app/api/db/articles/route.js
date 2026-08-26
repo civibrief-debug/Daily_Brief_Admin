@@ -1,25 +1,112 @@
 import { NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 import { queryD1 } from '../../../../lib/edgeDb';
 
-export const runtime = 'edge';
+function getSharedDbPath() {
+  const candidates = [
+    path.join(process.cwd(), '..', 'shared_database.json'),
+    path.join(process.cwd(), 'shared_database.json'),
+    'd:/Daily News/shared_database.json'
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch (e) {}
+  }
+  return candidates[0];
+}
 
-export async function GET() {
+function readSharedDb() {
+  const p = getSharedDbPath();
   try {
-    const rows = await queryD1('SELECT * FROM articles ORDER BY COALESCE(updatedAt, createdAt) DESC, createdAt DESC;');
-    const formatted = rows.map(r => ({
+    if (fs.existsSync(p)) {
+      const raw = fs.readFileSync(p, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {}
+  return null;
+}
 
-      ...r,
-      isHero: Boolean(r.isHero),
-      isEditorsPick: Boolean(r.isEditorsPick),
-      isTrending: Boolean(r.isTrending),
-      isLive: Boolean(r.isLive),
-      placeholderAdEnabled: Boolean(r.placeholderAdEnabled),
-      comments: r.comments ? (typeof r.comments === 'string' ? (JSON.parse(r.comments || '[]')) : r.comments) : [],
-      adPlacements: r.adPlacements ? (typeof r.adPlacements === 'string' ? JSON.parse(r.adPlacements) : r.adPlacements) : [],
-      coverImageCrop: r.coverImageCrop ? (typeof r.coverImageCrop === 'string' ? JSON.parse(r.coverImageCrop) : r.coverImageCrop) : null,
-      coverVideoCrop: r.coverVideoCrop ? (typeof r.coverVideoCrop === 'string' ? JSON.parse(r.coverVideoCrop) : r.coverVideoCrop) : null
-    }));
-    return NextResponse.json({ success: true, data: formatted });
+function writeSharedDb(updater) {
+  const p = getSharedDbPath();
+  try {
+    let db = readSharedDb() || { articles: [] };
+    const updatedDb = updater(db);
+    fs.writeFileSync(p, JSON.stringify(updatedDb || db, null, 2), 'utf8');
+    return true;
+  } catch (e) {
+    console.error('Error writing shared_database.json:', e);
+    return false;
+  }
+}
+
+function formatArticle(r) {
+  if (!r) return null;
+  return {
+    ...r,
+    coverMediaType: r.coverMediaType || (r.videoUrl ? 'video' : 'image'),
+    isHero: Boolean(r.isHero),
+    isEditorsPick: Boolean(r.isEditorsPick),
+    isTrending: Boolean(r.isTrending),
+    isLive: Boolean(r.isLive),
+    placeholderAdEnabled: Boolean(r.placeholderAdEnabled),
+    comments: r.comments ? (typeof r.comments === 'string' ? (JSON.parse(r.comments || '[]')) : r.comments) : [],
+    adPlacements: r.adPlacements ? (typeof r.adPlacements === 'string' ? JSON.parse(r.adPlacements) : r.adPlacements) : [],
+    coverImageCrop: r.coverImageCrop ? (typeof r.coverImageCrop === 'string' ? JSON.parse(r.coverImageCrop) : r.coverImageCrop) : null,
+    coverVideoCrop: r.coverVideoCrop ? (typeof r.coverVideoCrop === 'string' ? JSON.parse(r.coverVideoCrop) : r.coverVideoCrop) : null
+  };
+}
+
+export async function GET(req) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const category = searchParams.get('category');
+    const includeDrafts = searchParams.get('includeDrafts') !== 'false';
+
+    // 1. Try D1 if configured
+    try {
+      let sql = 'SELECT * FROM articles';
+      const params = [];
+      const conditions = [];
+
+      if (!includeDrafts) {
+        conditions.push("status = 'Published'");
+      }
+
+      if (category && category !== 'All') {
+        conditions.push('(category = ? OR category LIKE ?)');
+        params.push(category, `%${category}%`);
+      }
+
+      if (conditions.length > 0) {
+        sql += ' WHERE ' + conditions.join(' AND ');
+      }
+
+      sql += ' ORDER BY COALESCE(updatedAt, createdAt) DESC, createdAt DESC;';
+
+      const rows = await queryD1(sql, params);
+      if (rows && rows.length > 0) {
+        const formatted = rows.map(formatArticle);
+        return NextResponse.json({ success: true, data: formatted });
+      }
+    } catch (e) {}
+
+    // 2. Fallback to shared_database.json
+    const db = readSharedDb();
+    if (db && Array.isArray(db.articles)) {
+      let result = db.articles;
+      if (!includeDrafts) {
+        result = result.filter(a => a.status === 'Published');
+      }
+      if (category && category !== 'All') {
+        const catLower = category.toLowerCase();
+        result = result.filter(a => (a.category || '').toLowerCase().includes(catLower));
+      }
+      return NextResponse.json({ success: true, data: result.map(formatArticle) });
+    }
+
+    return NextResponse.json({ success: true, data: [] });
   } catch (err) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
@@ -59,57 +146,111 @@ export async function POST(req) {
     const videoUrl = body.videoUrl || '';
     const photoCaption = body.photoCaption || '';
     const photoCredit = body.photoCredit || '';
-    const coverImageCrop = JSON.stringify(body.coverImageCrop || body.coverCropBox || {});
-    const coverVideoCrop = JSON.stringify(body.coverVideoCrop || {});
+    const coverImageCrop = body.coverImageCrop || body.coverCropBox || {};
+    const coverVideoCrop = body.coverVideoCrop || {};
     const coverMediaAspect = body.coverMediaAspect || '16:9';
     const readTime = body.readTime || '3 min read';
     const isHero = body.isHero ? 1 : 0;
     const isEditorsPick = body.isEditorsPick ? 1 : 0;
     const isTrending = body.isTrending ? 1 : 0;
     const isLive = body.isLive ? 1 : 0;
-    const adPlacements = JSON.stringify(body.adPlacements || []);
+    const adPlacements = body.adPlacements || [];
     const placeholderAdEnabled = body.placeholderAdEnabled ? 1 : 0;
     const placeholderAdTargetUrl = body.placeholderAdTargetUrl || '';
     const placeholderAdHeadline = body.placeholderAdHeadline || '';
     const placeholderAdDescription = body.placeholderAdDescription || '';
     const placeholderAdCtaText = body.placeholderAdCtaText || '';
-    const createdAt = new Date().toISOString();
-    const publishedAt = body.status === 'Published' ? new Date().toISOString() : null;
+    const createdAt = body.createdAt || new Date().toISOString();
+    const publishedAt = body.status === 'Published' ? (body.publishedAt || new Date().toISOString()) : null;
     const updatedAt = new Date().toISOString();
 
-    const sql = `
-      INSERT OR REPLACE INTO articles (
+    const formattedArticle = {
+      ...body,
+      id,
+      title,
+      kicker,
+      supertitle,
+      category,
+      subSection,
+      author,
+      authorId,
+      assignedEditorId,
+      assignedEditorName,
+      status,
+      summary,
+      content,
+      imageUrl,
+      coverMediaType,
+      videoUrl,
+      photoCaption,
+      photoCredit,
+      coverImageCrop,
+      coverVideoCrop,
+      coverMediaAspect,
+      readTime,
+      isHero: Boolean(isHero),
+      isEditorsPick: Boolean(isEditorsPick),
+      isTrending: Boolean(isTrending),
+      isLive: Boolean(isLive),
+      adPlacements,
+      placeholderAdEnabled: Boolean(placeholderAdEnabled),
+      placeholderAdTargetUrl,
+      placeholderAdHeadline,
+      placeholderAdDescription,
+      placeholderAdCtaText,
+      createdAt,
+      publishedAt,
+      updatedAt
+    };
+
+    // 1. Write to shared_database.json
+    writeSharedDb((db) => {
+      if (!Array.isArray(db.articles)) db.articles = [];
+      const existingIdx = db.articles.findIndex(a => a.id === id);
+      if (existingIdx >= 0) {
+        db.articles[existingIdx] = formattedArticle;
+      } else {
+        db.articles.unshift(formattedArticle);
+      }
+      return db;
+    });
+
+    // 2. Try sync to D1
+    try {
+      const sql = `
+        INSERT OR REPLACE INTO articles (
+          id, title, kicker, supertitle, category, subSection, author, authorId,
+          assignedEditorId, assignedEditorName, status, summary, content, imageUrl,
+          coverMediaType, videoUrl, photoCaption, photoCredit, coverImageCrop,
+          coverVideoCrop, coverMediaAspect, readTime, isHero, isEditorsPick,
+          isTrending, isLive, adPlacements, placeholderAdEnabled,
+          placeholderAdTargetUrl, placeholderAdHeadline, placeholderAdDescription,
+          placeholderAdCtaText, createdAt, publishedAt, updatedAt
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          ?, ?, ?,
+          ?, ?, ?, ?
+        );
+      `;
+
+      const params = [
         id, title, kicker, supertitle, category, subSection, author, authorId,
         assignedEditorId, assignedEditorName, status, summary, content, imageUrl,
-        coverMediaType, videoUrl, photoCaption, photoCredit, coverImageCrop,
-        coverVideoCrop, coverMediaAspect, readTime, isHero, isEditorsPick,
-        isTrending, isLive, adPlacements, placeholderAdEnabled,
+        coverMediaType, videoUrl, photoCaption, photoCredit, JSON.stringify(coverImageCrop),
+        JSON.stringify(coverVideoCrop), coverMediaAspect, readTime, isHero, isEditorsPick,
+        isTrending, isLive, JSON.stringify(adPlacements), placeholderAdEnabled,
         placeholderAdTargetUrl, placeholderAdHeadline, placeholderAdDescription,
         placeholderAdCtaText, createdAt, publishedAt, updatedAt
-      ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?,
-        ?, ?, ?, ?
-      );
-    `;
+      ];
 
-    const params = [
-      id, title, kicker, supertitle, category, subSection, author, authorId,
-      assignedEditorId, assignedEditorName, status, summary, content, imageUrl,
-      coverMediaType, videoUrl, photoCaption, photoCredit, coverImageCrop,
-      coverVideoCrop, coverMediaAspect, readTime, isHero, isEditorsPick,
-      isTrending, isLive, adPlacements, placeholderAdEnabled,
-      placeholderAdTargetUrl, placeholderAdHeadline, placeholderAdDescription,
-      placeholderAdCtaText, createdAt, publishedAt, updatedAt
-    ];
+      await queryD1(sql, params);
+    } catch (e) {}
 
-    await queryD1(sql, params);
-
-    return NextResponse.json({ success: true, data: { id, title, status, createdAt } });
+    return NextResponse.json({ success: true, data: formattedArticle });
   } catch (err) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getContinuousVideoUrls } from '../lib/videoUtils';
 
 export default function ContinuousCoverVideo({
@@ -18,33 +18,67 @@ export default function ContinuousCoverVideo({
 }) {
   const videoRef = useRef(null);
   const [videoError, setVideoError] = useState(false);
-  const videoMeta = getContinuousVideoUrls(src);
+  const cleanSrc = (typeof src === 'string' ? src.trim() : '') || '';
+  const videoMeta = getContinuousVideoUrls(cleanSrc);
 
   // Reset error state on src change
   useEffect(() => {
     setVideoError(false);
   }, [src]);
 
-  // Auto-play and continuous playback loop
-  useEffect(() => {
-    if (videoRef.current && autoPlay && !videoError) {
-      videoRef.current.defaultMuted = muted;
-      videoRef.current.muted = muted;
-      const playPromise = videoRef.current.play();
+  // Safe play attempt function supporting Safari, iOS, Chrome, Edge
+  const attemptPlay = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !autoPlay || videoError) return;
+
+    try {
+      video.defaultMuted = muted;
+      video.muted = muted;
+      const playPromise = video.play();
       if (playPromise !== undefined) {
         playPromise.catch(() => {
-          // Autoplay policy fallback: keep muted and ready
+          // If unmuted autoplay was blocked by Safari/iOS, force muted and retry
+          if (!video.muted) {
+            video.muted = true;
+            video.play().catch(() => {});
+          }
         });
       }
-    }
-  }, [src, autoPlay, muted, videoError]);
+    } catch (err) {}
+  }, [autoPlay, muted, videoError]);
+
+  // Auto-play and continuous playback loop
+  useEffect(() => {
+    attemptPlay();
+
+    // iOS Safari Low-Power-Mode / User Gesture Recovery
+    const handleFirstUserInteraction = () => {
+      const video = videoRef.current;
+      if (video && video.paused && autoPlay && !videoError) {
+        attemptPlay();
+      }
+    };
+
+    window.addEventListener('touchstart', handleFirstUserInteraction, { passive: true, once: true });
+    window.addEventListener('click', handleFirstUserInteraction, { passive: true, once: true });
+
+    return () => {
+      window.removeEventListener('touchstart', handleFirstUserInteraction);
+      window.removeEventListener('click', handleFirstUserInteraction);
+    };
+  }, [src, attemptPlay, autoPlay, videoError]);
 
   // Synchronize dynamic mute/unmute changes from parent
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.muted = muted;
+      videoRef.current.defaultMuted = muted;
     }
   }, [muted]);
+
+  if (!cleanSrc) {
+    return null;
+  }
 
   // 1. If it's a genuine YouTube / Vimeo / Dailymotion / Loom embed or Google Drive document preview
   const isEmbedSource = (videoMeta.isYouTube || videoMeta.isVimeo || videoMeta.isEmbed || (videoMeta.isGDrive && videoMeta.isDoc)) && Boolean(videoMeta.embedUrl);
@@ -128,8 +162,8 @@ export default function ContinuousCoverVideo({
         muted={muted}
         loop={loop}
         playsInline={playsInline}
-        crossOrigin="anonymous"
-        referrerPolicy="no-referrer"
+        webkit-playsinline="true"
+        x5-playsinline="true"
         preload="auto"
         className={className}
         style={{
@@ -141,6 +175,8 @@ export default function ContinuousCoverVideo({
           cursor: onClick ? 'pointer' : 'default',
           ...cropStyle
         }}
+        onLoadedData={attemptPlay}
+        onCanPlay={attemptPlay}
         onError={() => {
           if (!videoError && videoMeta.proxyStreamUrl && streamSrc !== videoMeta.proxyStreamUrl) {
             if (videoRef.current) {
@@ -176,7 +212,7 @@ export default function ContinuousCoverVideo({
           }
         }}
       >
-        <source src={streamSrc} type="video/mp4" />
+        <source src={streamSrc} />
         Your browser does not support the video tag.
       </video>
 
