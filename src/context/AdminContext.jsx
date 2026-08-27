@@ -72,29 +72,34 @@ export function AdminProvider({ children }) {
     setTheme(savedTheme);
     document.documentElement.setAttribute('data-theme', savedTheme);
 
-    // Purge any legacy unverified auto-saved sessions from previous versions
-    if (localStorage.getItem('db_admin_user')) {
-      localStorage.removeItem('db_admin_user');
+    // Purge any persistent auto-saved sessions across all browsers (Chrome, Edge, Safari)
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('db_admin_user');
+        localStorage.removeItem('db_admin_session_v2');
+      } catch (e) {}
     }
 
-    const savedSessionStr = localStorage.getItem('db_admin_session_v2');
-    if (savedSessionStr) {
+    // Read ONLY active tab in-memory session (cleared automatically when tab/browser is closed)
+    let activeSession = null;
+    if (typeof window !== 'undefined') {
       try {
-        const savedSession = JSON.parse(savedSessionStr);
-        if (savedSession && savedSession.id && savedSession.authSessionId && savedSession.roleId) {
-          setCurrentUser(savedSession);
-        } else {
-          setCurrentUser(null);
-          localStorage.removeItem('db_admin_session_v2');
+        const savedSessionStr = sessionStorage.getItem('db_admin_active_tab_session');
+        if (savedSessionStr) {
+          const parsed = JSON.parse(savedSessionStr);
+          if (parsed && parsed.id && parsed.authSessionId && parsed.roleId) {
+            activeSession = parsed;
+          } else {
+            sessionStorage.removeItem('db_admin_active_tab_session');
+          }
         }
       } catch (err) {
-        console.error("Failed to parse saved session", err);
-        setCurrentUser(null);
-        localStorage.removeItem('db_admin_session_v2');
+        try { sessionStorage.removeItem('db_admin_active_tab_session'); } catch (e) {}
       }
-    } else {
-      setCurrentUser(null);
     }
+
+    setCurrentUser(activeSession);
+    setIsInitialized(true);
 
 
     const savedAdminsStr = localStorage.getItem('db_admin_users');
@@ -304,8 +309,13 @@ export function AdminProvider({ children }) {
         authenticatedAt: new Date().toISOString()
       };
       setCurrentUser(userSession);
-      localStorage.setItem('db_admin_session_v2', JSON.stringify(userSession));
-      localStorage.removeItem('db_admin_user');
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem('db_admin_active_tab_session', JSON.stringify(userSession));
+          localStorage.removeItem('db_admin_session_v2');
+          localStorage.removeItem('db_admin_user');
+        } catch (e) {}
+      }
       showToast(`Welcome back, Super Admin`, "success");
       return { success: true, user: userSession };
     }
@@ -348,8 +358,13 @@ export function AdminProvider({ children }) {
       };
 
       setCurrentUser(userSession);
-      localStorage.setItem('db_admin_session_v2', JSON.stringify(userSession));
-      localStorage.removeItem('db_admin_user');
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem('db_admin_active_tab_session', JSON.stringify(userSession));
+          localStorage.removeItem('db_admin_session_v2');
+          localStorage.removeItem('db_admin_user');
+        } catch (e) {}
+      }
       const roleDef = INITIAL_ROLE_DEFINITIONS.find(r => r.id === userSession.roleId);
       showToast(`Welcome back, ${userSession.name} (${roleDef?.name || userSession.roleId})`, "success");
       return { success: true, user: userSession };
@@ -375,15 +390,26 @@ export function AdminProvider({ children }) {
       name: roleNames[newRoleId] || currentUser?.name || 'Admin User'
     };
     setCurrentUser(updated);
-    localStorage.setItem('db_admin_session_v2', JSON.stringify(updated));
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('db_admin_active_tab_session', JSON.stringify(updated));
+        localStorage.removeItem('db_admin_session_v2');
+        localStorage.removeItem('db_admin_user');
+      } catch (e) {}
+    }
     showToast(`Switched active role scope to ${INITIAL_ROLE_DEFINITIONS.find(r => r.id === newRoleId)?.name || newRoleId}`, "info");
   };
 
   // Logout Function
   const logout = () => {
     setCurrentUser(null);
-    localStorage.removeItem('db_admin_session_v2');
-    localStorage.removeItem('db_admin_user');
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem('db_admin_active_tab_session');
+        localStorage.removeItem('db_admin_session_v2');
+        localStorage.removeItem('db_admin_user');
+      } catch (e) {}
+    }
     showToast("Logged out of Command Center.", "info");
   };
 
@@ -775,7 +801,12 @@ export function AdminProvider({ children }) {
     if (currentUser && currentUser.id === updatedAdmin.id) {
       const updatedUserSession = { ...currentUser, ...updatedAdmin };
       setCurrentUser(updatedUserSession);
-      localStorage.setItem('db_admin_user', JSON.stringify(updatedUserSession));
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem('db_admin_active_tab_session', JSON.stringify(updatedUserSession));
+          localStorage.removeItem('db_admin_user');
+        } catch (e) {}
+      }
     }
 
     showToast(`Admin personnel access for ${updatedAdmin.name} updated.`, "success");
