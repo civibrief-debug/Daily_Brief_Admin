@@ -613,17 +613,70 @@ export default function HomepagePlacementBuilder() {
   };
 
   const handleMoveInstance = (instanceId, direction) => {
-    const index = instances.findIndex(i => i.instanceId === instanceId);
-    if (index === -1) return;
-    if (direction === 'up' && index === 0) return;
-    if (direction === 'down' && index === instances.length - 1) return;
+    const inst = instances.find(i => i.instanceId === instanceId);
+    if (!inst) return;
 
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    const updated = [...instances];
-    const [movedItem] = updated.splice(index, 1);
-    updated.splice(targetIndex, 0, movedItem);
-    setInstances(updated);
-    setHasUnsavedChanges(true);
+    const currentPos = inst.slotPosition === 'below_ad' ? 'below_ad' : 'above_ad';
+    const targetRegion = inst.sectionRegion || inst.column || 'hero_col1';
+    const regionInstances = getInstancesForRegion(targetRegion, currentPos);
+    const localIdx = regionInstances.findIndex(i => i.instanceId === instanceId);
+
+    if (direction === 'up') {
+      if (localIdx <= 0) {
+        // If at top of below_ad, move to above_ad (at bottom of above_ad)
+        if (currentPos === 'below_ad') {
+          updateInstance(instanceId, { slotPosition: 'above_ad' });
+          showToast(`Moved "${inst.sectionTitle}" to Top position (Above Ad)!`, "success");
+          return;
+        }
+        showToast(`"${inst.sectionTitle}" is already at the top of this section!`, "info");
+        return;
+      }
+      const prevInst = regionInstances[localIdx - 1];
+      if (prevInst) {
+        const globalIdx = instances.findIndex(i => i.instanceId === instanceId);
+        const updated = [...instances];
+        const [moved] = updated.splice(globalIdx, 1);
+        const newTargetIdx = updated.findIndex(i => i.instanceId === prevInst.instanceId);
+        updated.splice(newTargetIdx, 0, moved);
+        setInstances(updated);
+        setHasUnsavedChanges(true);
+        showToast(`Moved "${inst.sectionTitle}" up!`, "info");
+      }
+    } else if (direction === 'down') {
+      if (localIdx === -1 || localIdx >= regionInstances.length - 1) {
+        // If at bottom of above_ad, move to below_ad (at top of below_ad)
+        if (currentPos === 'above_ad') {
+          updateInstance(instanceId, { slotPosition: 'below_ad' });
+          showToast(`Moved "${inst.sectionTitle}" to Bottom position (Below Ad)!`, "success");
+          return;
+        }
+        showToast(`"${inst.sectionTitle}" is already at the bottom of this section!`, "info");
+        return;
+      }
+      const nextInst = regionInstances[localIdx + 1];
+      if (nextInst) {
+        const globalIdx = instances.findIndex(i => i.instanceId === instanceId);
+        const updated = [...instances];
+        const [moved] = updated.splice(globalIdx, 1);
+        const newTargetIdx = updated.findIndex(i => i.instanceId === nextInst.instanceId);
+        updated.splice(newTargetIdx + 1, 0, moved);
+        setInstances(updated);
+        setHasUnsavedChanges(true);
+        showToast(`Moved "${inst.sectionTitle}" down!`, "info");
+      }
+    }
+  };
+
+  const handleMoveToRegion = (instanceId, targetRegion, targetSlotPos = 'above_ad') => {
+    const regionDef = HOMEPAGE_REGIONS.find(r => r.id === targetRegion);
+    updateInstance(instanceId, inst => ({
+      ...inst,
+      sectionRegion: targetRegion,
+      slotPosition: targetSlotPos,
+      column: regionDef?.defaultCol || inst.column
+    }));
+    showToast(`Moved to ${regionDef?.name || targetRegion} (${targetSlotPos === 'below_ad' ? 'Bottom' : 'Top'})!`, "success");
   };
 
   const handleToggleCategoryForInstance = (instanceId, cat) => {
@@ -722,19 +775,42 @@ export default function HomepagePlacementBuilder() {
     if (targetInstanceId && targetInstanceId !== draggedInstanceId) {
       const targetIdx = updated.findIndex(i => i.instanceId === targetInstanceId);
       if (targetIdx !== -1) {
+        const targetInst = updated[targetIdx];
+        if (targetInst) {
+          draggedItem.sectionRegion = targetInst.sectionRegion || regionId;
+          draggedItem.slotPosition = targetInst.slotPosition || slotPosition;
+        }
         updated.splice(targetIdx, 0, draggedItem);
       } else {
         updated.push(draggedItem);
       }
+    } else if (slotPosition === 'above_ad') {
+      const firstInRegionIdx = updated.findIndex(i => (i.sectionRegion || i.column) === regionId);
+      if (firstInRegionIdx !== -1) {
+        updated.splice(firstInRegionIdx, 0, draggedItem);
+      } else {
+        updated.push(draggedItem);
+      }
     } else {
-      updated.push(draggedItem);
+      let lastInRegionIdx = -1;
+      for (let i = updated.length - 1; i >= 0; i--) {
+        if ((updated[i].sectionRegion || updated[i].column) === regionId) {
+          lastInRegionIdx = i;
+          break;
+        }
+      }
+      if (lastInRegionIdx !== -1) {
+        updated.splice(lastInRegionIdx + 1, 0, draggedItem);
+      } else {
+        updated.push(draggedItem);
+      }
     }
 
     setInstances(updated);
     setHasUnsavedChanges(true);
     setDraggedInstanceId(null);
     setDragOverTarget(null);
-    showToast(`Moved "${draggedItem.sectionTitle}" into ${regionDef?.name || regionId}!`, "success");
+    showToast(`Moved "${draggedItem.sectionTitle}" into ${regionDef?.name || regionId} (${slotPosition === 'below_ad' ? 'Bottom' : 'Top'})!`, "success");
   };
 
   const handleDragEnd = () => {
@@ -846,16 +922,24 @@ export default function HomepagePlacementBuilder() {
     showToast("Unpinned article. Slot is now in Auto-Feed mode from assigned categories.", "info");
   };
 
-  const getInstancesForRegion = (regionId) => {
+  const getInstancesForRegion = (regionId, slotPosition = null) => {
     return instances.filter(i => {
       if (i.enabled === false) return false;
-      if (i.sectionRegion === regionId) return true;
-      if (!i.sectionRegion) {
-        if (regionId === 'hero_col1' && (i.column === 'left' || i.templateType === 'hero_lead')) return true;
-        if (regionId === 'hero_col2' && (i.column === 'center' || i.templateType === 'hero_second_lead' || i.templateType === 'hero_stacked')) return true;
-        if (regionId === 'hero_col3' && (i.column === 'right' || i.templateType === 'opinion')) return true;
+      const matchesRegion = i.sectionRegion === regionId || (!i.sectionRegion && (
+        (regionId === 'hero_col1' && (i.column === 'left' || i.templateType === 'hero_lead')) ||
+        (regionId === 'hero_col2' && (i.column === 'center' || i.templateType === 'hero_second_lead' || i.templateType === 'hero_stacked')) ||
+        (regionId === 'hero_col3' && (i.column === 'right' || i.templateType === 'opinion'))
+      ));
+
+      if (!matchesRegion) return false;
+
+      if (slotPosition === 'below_ad') {
+        return i.slotPosition === 'below_ad';
+      } else if (slotPosition === 'above_ad') {
+        return i.slotPosition !== 'below_ad';
       }
-      return false;
+
+      return true;
     });
   };
 
@@ -977,6 +1061,8 @@ export default function HomepagePlacementBuilder() {
     const isDragging = draggedInstanceId === inst.instanceId;
     const isMainSelected = selectedNode?.instanceId === inst.instanceId;
     const sizeMode = inst.sizeMode || 'normal';
+    const currentPos = inst.slotPosition === 'below_ad' ? 'below_ad' : 'above_ad';
+    const currentRegion = inst.sectionRegion || inst.column || 'hero_col1';
 
     const slidesList = Array.isArray(inst.slides) && inst.slides.length > 0 
       ? inst.slides 
@@ -991,6 +1077,8 @@ export default function HomepagePlacementBuilder() {
         draggable
         onDragStart={(e) => handleDragStart(e, inst.instanceId)}
         onDragEnd={handleDragEnd}
+        onDragOver={(e) => handleDragOverSlot(e, currentRegion, currentPos, inst.instanceId)}
+        onDrop={(e) => handleDropIntoSlot(e, currentRegion, currentPos, inst.instanceId)}
         style={{
           display: 'flex',
           flexDirection: 'column',
@@ -1019,8 +1107,8 @@ export default function HomepagePlacementBuilder() {
           width: '100%',
           minWidth: 0
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0, flex: 1 }}>
-            <div style={{ cursor: 'grab', color: '#38bdf8', display: 'flex', alignItems: 'center', flexShrink: 0 }} title="Drag to move template">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0, flex: 1 }}>
+            <div style={{ cursor: 'grab', color: '#38bdf8', display: 'flex', alignItems: 'center', flexShrink: 0 }} title="Drag to reorder or move template">
               <GripVertical size={12} />
             </div>
             <span style={{ fontSize: '7.5px', fontWeight: 900, background: inst.badgeColor || '#2563eb', color: '#ffffff', padding: '1px 4px', borderRadius: '2px', flexShrink: 0 }}>
@@ -1032,6 +1120,85 @@ export default function HomepagePlacementBuilder() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}>
+            {/* Quick Move Up / Down Buttons */}
+            <button
+              type="button"
+              onClick={() => handleMoveInstance(inst.instanceId, 'up')}
+              title="Move up in section (or to Top)"
+              style={{
+                background: '#131d2c',
+                color: '#38bdf8',
+                border: '1px solid #26374d',
+                padding: '0 4px',
+                height: '20px',
+                borderRadius: '3px',
+                fontSize: '9px',
+                fontWeight: 900,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              ▲
+            </button>
+            <button
+              type="button"
+              onClick={() => handleMoveInstance(inst.instanceId, 'down')}
+              title="Move down in section (or to Bottom / below ad)"
+              style={{
+                background: '#131d2c',
+                color: '#38bdf8',
+                border: '1px solid #26374d',
+                padding: '0 4px',
+                height: '20px',
+                borderRadius: '3px',
+                fontSize: '9px',
+                fontWeight: 900,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center'
+              }}
+            >
+              ▼
+            </button>
+
+            {/* Direct Section & Position Destination Selector */}
+            <select
+              value={`${currentRegion}:${currentPos}`}
+              onChange={(e) => {
+                const [reg, slot] = e.target.value.split(':');
+                handleMoveToRegion(inst.instanceId, reg, slot);
+              }}
+              title="Instantly move card to another section or position"
+              style={{
+                background: '#131d2c',
+                border: '1px solid #334155',
+                color: '#93c5fd',
+                fontSize: '8.5px',
+                fontWeight: 800,
+                borderRadius: '3px',
+                padding: '1px 2px',
+                height: '20px',
+                cursor: 'pointer',
+                maxWidth: '75px'
+              }}
+            >
+              <option value="hero_col1:above_ad">Hero Col 1</option>
+              <option value="hero_col2:above_ad">Hero Col 2</option>
+              <option value="hero_col3:above_ad">Hero Col 3 (Top)</option>
+              <option value="hero_col3:below_ad">Hero Col 3 (Bottom)</option>
+              <option value="national_global:above_ad">National (Top)</option>
+              <option value="national_global:below_ad">National (Bottom)</option>
+              <option value="world_geopolitics:above_ad">World (Top)</option>
+              <option value="world_geopolitics:below_ad">World (Bottom)</option>
+              <option value="tech_ai:above_ad">Tech & AI (Top)</option>
+              <option value="tech_ai:below_ad">Tech & AI (Bottom)</option>
+              <option value="markets_economy:above_ad">Markets (Top)</option>
+              <option value="markets_economy:below_ad">Markets (Bottom)</option>
+              <option value="deep_dives:above_ad">Deep Dives (Top)</option>
+              <option value="deep_dives:below_ad">Deep Dives (Bottom)</option>
+            </select>
+
             <select
               value={inst.templateType}
               onChange={(e) => handleSwitchTemplateType(inst.instanceId, e.target.value)}
@@ -2106,7 +2273,8 @@ export default function HomepagePlacementBuilder() {
                   boxSizing: 'border-box'
                 }}>
                   {renderSlotDropZone('hero_col1', 'above_ad', '✚ Drop at Top of Col 1')}
-                  {getInstancesForRegion('hero_col1').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('hero_col1', 'above_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('hero_col1', 'below_ad').map(inst => renderTemplateCard(inst))}
                   {renderSlotDropZone('hero_col1', 'below_ad', '✚ Drop at Bottom of Col 1')}
                 </div>
 
@@ -2122,7 +2290,8 @@ export default function HomepagePlacementBuilder() {
                   boxSizing: 'border-box'
                 }}>
                   {renderSlotDropZone('hero_col2', 'above_ad', '✚ Drop at Top of Col 2')}
-                  {getInstancesForRegion('hero_col2').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('hero_col2', 'above_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('hero_col2', 'below_ad').map(inst => renderTemplateCard(inst))}
                   {renderSlotDropZone('hero_col2', 'below_ad', '✚ Drop at Bottom of Col 2')}
                 </div>
 
@@ -2136,7 +2305,7 @@ export default function HomepagePlacementBuilder() {
                   boxSizing: 'border-box'
                 }}>
                   {renderSlotDropZone('hero_col3', 'above_ad', '✚ Drop at Top of Rail')}
-                  {getInstancesForRegion('hero_col3').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('hero_col3', 'above_ad').map(inst => renderTemplateCard(inst))}
                   
                   {/* Sidebar Top Ad (Zone 6) */}
                   {renderBroadsheetAd('dropzone-sidebar-top', 'Sidebar Top (Above Intelligence)', 'rectangle')}
@@ -2144,6 +2313,7 @@ export default function HomepagePlacementBuilder() {
                   {/* Sidebar Sticky Ad (Zone 7) */}
                   {renderBroadsheetAd('dropzone-sidebar-bottom', 'Sidebar Sticky (Below Intelligence)', 'rectangle')}
                   
+                  {getInstancesForRegion('hero_col3', 'below_ad').map(inst => renderTemplateCard(inst))}
                   {renderSlotDropZone('hero_col3', 'below_ad', '✚ Drop at Bottom of Rail')}
                 </div>
               </div>
@@ -2162,9 +2332,12 @@ export default function HomepagePlacementBuilder() {
 
                 {renderSlotDropZone('national_global', 'above_ad', '✚ Drop in National Affairs (Top)')}
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
-                  {getInstancesForRegion('national_global').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('national_global', 'above_ad').map(inst => renderTemplateCard(inst))}
                 </div>
                 {renderBroadsheetAd('dropzone-feed-row-1', 'In-Feed Native Stream (Inside National Affairs)', 'in_feed')}
+                <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box', marginTop: getInstancesForRegion('national_global', 'below_ad').length > 0 ? '10px' : '0' }}>
+                  {getInstancesForRegion('national_global', 'below_ad').map(inst => renderTemplateCard(inst))}
+                </div>
                 {renderSlotDropZone('national_global', 'below_ad', '✚ Drop in National Affairs (Bottom)')}
               </div>
 
@@ -2179,9 +2352,12 @@ export default function HomepagePlacementBuilder() {
 
                 {renderSlotDropZone('world_geopolitics', 'above_ad', '✚ Drop in World & Geopolitics (Top)')}
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
-                  {getInstancesForRegion('world_geopolitics').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('world_geopolitics', 'above_ad').map(inst => renderTemplateCard(inst))}
                 </div>
                 {renderBroadsheetAd('dropzone-feed-row-2', 'In-Feed Native Stream (Inside World & Geopolitics)', 'in_feed')}
+                <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box', marginTop: getInstancesForRegion('world_geopolitics', 'below_ad').length > 0 ? '10px' : '0' }}>
+                  {getInstancesForRegion('world_geopolitics', 'below_ad').map(inst => renderTemplateCard(inst))}
+                </div>
                 {renderSlotDropZone('world_geopolitics', 'below_ad', '✚ Drop in World & Geopolitics (Bottom)')}
               </div>
 
@@ -2196,7 +2372,10 @@ export default function HomepagePlacementBuilder() {
 
                 {renderSlotDropZone('tech_ai', 'above_ad', '✚ Drop in Tech & AI (Top)')}
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
-                  {getInstancesForRegion('tech_ai').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('tech_ai', 'above_ad').map(inst => renderTemplateCard(inst))}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box', marginTop: getInstancesForRegion('tech_ai', 'below_ad').length > 0 ? '10px' : '0' }}>
+                  {getInstancesForRegion('tech_ai', 'below_ad').map(inst => renderTemplateCard(inst))}
                 </div>
                 {renderSlotDropZone('tech_ai', 'below_ad', '✚ Drop in Tech & AI (Bottom)')}
               </div>
@@ -2210,9 +2389,12 @@ export default function HomepagePlacementBuilder() {
                   <span style={{ fontSize: '10.5px', color: '#64748b' }}>Slot Region: <strong style={{ color: '#38bdf8' }}>markets_economy</strong></span>
                 </div>
 
-                {renderSlotDropZone('markets_economy', 'above_ad', '✚ Drop in Markets & Economy')}
+                {renderSlotDropZone('markets_economy', 'above_ad', '✚ Drop in Markets & Economy (Top)')}
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
-                  {getInstancesForRegion('markets_economy').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('markets_economy', 'above_ad').map(inst => renderTemplateCard(inst))}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box', marginTop: getInstancesForRegion('markets_economy', 'below_ad').length > 0 ? '10px' : '0' }}>
+                  {getInstancesForRegion('markets_economy', 'below_ad').map(inst => renderTemplateCard(inst))}
                 </div>
                 {renderSlotDropZone('markets_economy', 'below_ad', '✚ Drop in Markets (Bottom)')}
               </div>
@@ -2232,11 +2414,14 @@ export default function HomepagePlacementBuilder() {
                   In-depth investigative briefings, market forensic audits, and comprehensive long-form reports reserved exclusively for active subscribers.
                 </div>
 
-                {renderSlotDropZone('deep_dives', 'above_ad', '✚ Drop in Deep Dives (Above Ad)')}
+                {renderSlotDropZone('deep_dives', 'above_ad', '✚ Drop in Deep Dives (Top)')}
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
-                  {getInstancesForRegion('deep_dives').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('deep_dives', 'above_ad').map(inst => renderTemplateCard(inst))}
                 </div>
-                {renderSlotDropZone('deep_dives', 'below_ad', '✚ Drop in Deep Dives (Below Ad)')}
+                <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box', marginTop: getInstancesForRegion('deep_dives', 'below_ad').length > 0 ? '10px' : '0' }}>
+                  {getInstancesForRegion('deep_dives', 'below_ad').map(inst => renderTemplateCard(inst))}
+                </div>
+                {renderSlotDropZone('deep_dives', 'below_ad', '✚ Drop in Deep Dives (Bottom)')}
               </div>
 
               {/* ZONE 9: FOOTER FLOATING AD */}
@@ -2301,17 +2486,75 @@ export default function HomepagePlacementBuilder() {
 
                 <div>
                   <label style={{ display: 'block', fontSize: '10px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px' }}>
-                    1. HOMEPAGE REGION SLOT
+                    1. HOMEPAGE REGION & PLACEMENT SLOT
                   </label>
                   <select
                     value={selectedInstance.sectionRegion || 'hero_col1'}
                     onChange={(e) => updateInstance(selectedInstance.instanceId, { sectionRegion: e.target.value })}
-                    style={{ width: '100%', background: '#090e17', border: '1px solid #1e293b', color: '#ffffff', padding: '7px 10px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer' }}
+                    style={{ width: '100%', background: '#090e17', border: '1px solid #1e293b', color: '#ffffff', padding: '7px 10px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 700, cursor: 'pointer', marginBottom: '8px' }}
                   >
                     {HOMEPAGE_REGIONS.map(r => (
                       <option key={r.id} value={r.id}>{r.name}</option>
                     ))}
                   </select>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateInstance(selectedInstance.instanceId, { slotPosition: 'above_ad' });
+                        showToast("Position set to Top (Above Ad)", "info");
+                      }}
+                      style={{
+                        background: (selectedInstance.slotPosition || 'above_ad') !== 'below_ad' ? '#2563eb' : '#131d2c',
+                        border: `1.5px solid ${(selectedInstance.slotPosition || 'above_ad') !== 'below_ad' ? '#38bdf8' : '#26374d'}`,
+                        color: '#ffffff',
+                        padding: '6px 8px',
+                        borderRadius: '4px',
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ✚ Top (Above Ad)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateInstance(selectedInstance.instanceId, { slotPosition: 'below_ad' });
+                        showToast("Position set to Bottom (Below Ad)", "info");
+                      }}
+                      style={{
+                        background: selectedInstance.slotPosition === 'below_ad' ? '#2563eb' : '#131d2c',
+                        border: `1.5px solid ${selectedInstance.slotPosition === 'below_ad' ? '#38bdf8' : '#26374d'}`,
+                        color: '#ffffff',
+                        padding: '6px 8px',
+                        borderRadius: '4px',
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ✚ Bottom (Below Ad)
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveInstance(selectedInstance.instanceId, 'up')}
+                      style={{ flex: 1, background: '#131d2c', border: '1px solid #334155', color: '#38bdf8', padding: '5px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                    >
+                      ▲ Move Up
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveInstance(selectedInstance.instanceId, 'down')}
+                      style={{ flex: 1, background: '#131d2c', border: '1px solid #334155', color: '#38bdf8', padding: '5px', borderRadius: '4px', fontSize: '10.5px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                    >
+                      ▼ Move Down
+                    </button>
+                  </div>
                 </div>
 
                 <div>
