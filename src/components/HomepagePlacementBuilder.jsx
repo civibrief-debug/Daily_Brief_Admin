@@ -1023,35 +1023,54 @@ export default function HomepagePlacementBuilder() {
 
   const renderSlotDropZone = (regionId, slotPosition, label = "Drop template here") => {
     const isTarget = dragOverTarget?.regionId === regionId && dragOverTarget?.slotPosition === slotPosition;
+    const isAnyDragging = Boolean(draggedInstanceId);
 
     return (
       <div
-        onDragOver={(e) => handleDragOverSlot(e, regionId, slotPosition)}
-        onDrop={(e) => handleDropIntoSlot(e, regionId, slotPosition)}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleDragOverSlot(e, regionId, slotPosition);
+        }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDragOverTarget({ regionId, slotPosition, instanceId: null });
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleDropIntoSlot(e, regionId, slotPosition);
+        }}
         style={{
-          margin: '3px 0',
-          padding: '4px 8px',
-          height: '26px',
+          margin: '6px 0',
+          padding: isTarget ? '10px 14px' : '6px 10px',
+          minHeight: isTarget ? '48px' : isAnyDragging ? '38px' : '28px',
           boxSizing: 'border-box',
-          borderRadius: '4px',
-          border: `1.5px dashed ${isTarget ? '#38bdf8' : '#1e293b'}`,
-          background: isTarget ? 'rgba(56, 189, 248, 0.15)' : 'rgba(15, 23, 42, 0.2)',
-          color: isTarget ? '#38bdf8' : '#64748b',
+          borderRadius: '6px',
+          border: `2px dashed ${isTarget ? '#38bdf8' : isAnyDragging ? '#2563eb' : '#1e293b'}`,
+          background: isTarget ? 'rgba(56, 189, 248, 0.25)' : isAnyDragging ? 'rgba(37, 99, 235, 0.12)' : 'rgba(15, 23, 42, 0.25)',
+          color: isTarget ? '#38bdf8' : isAnyDragging ? '#93c5fd' : '#64748b',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '5px',
-          fontSize: '10px',
-          fontWeight: 700,
+          gap: '6px',
+          fontSize: '11px',
+          fontWeight: 800,
           transition: 'all 0.15s ease',
-          boxShadow: isTarget ? '0 0 12px rgba(56, 189, 248, 0.35)' : 'none',
+          boxShadow: isTarget ? '0 0 18px rgba(56, 189, 248, 0.5)' : isAnyDragging ? '0 0 8px rgba(37, 99, 235, 0.2)' : 'none',
           cursor: 'pointer',
-          width: '100%'
+          width: '100%',
+          transform: isTarget ? 'scale(1.01)' : 'none'
         }}
       >
-        <Plus size={10} color={isTarget ? "#38bdf8" : "#64748b"} />
+        <Plus size={12} color={isTarget ? "#38bdf8" : isAnyDragging ? "#93c5fd" : "#64748b"} />
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {isTarget ? `Release to place (${slotPosition})` : label}
+          {isTarget ? `⬇ Release to place in ${slotPosition === 'below_ad' ? 'BOTTOM (Below Ad)' : 'TOP (Above Ad)'}` : label}
         </span>
       </div>
     );
@@ -1077,8 +1096,6 @@ export default function HomepagePlacementBuilder() {
         draggable
         onDragStart={(e) => handleDragStart(e, inst.instanceId)}
         onDragEnd={handleDragEnd}
-        onDragOver={(e) => handleDragOverSlot(e, currentRegion, currentPos, inst.instanceId)}
-        onDrop={(e) => handleDropIntoSlot(e, currentRegion, currentPos, inst.instanceId)}
         style={{
           display: 'flex',
           flexDirection: 'column',
