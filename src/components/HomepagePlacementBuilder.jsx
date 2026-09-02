@@ -144,6 +144,51 @@ export const HOMEPAGE_REGIONS = [
   { id: 'sidebar_rail', name: 'Sidebar News Stream & Intelligence', defaultCol: 'right' }
 ];
 
+export const CATEGORY_TO_REGIONS_MAP = {
+  "Top Stories": ["hero_col1", "hero_col2"],
+  "Editorial": ["hero_col3"],
+  "Opinion & Essays": ["hero_col3"],
+  "Sports": ["sports_desk"],
+  "Tech & AI": ["tech_ai"],
+  "Science & Climate": ["tech_ai"],
+  "Markets & Economy": ["markets_economy"],
+  "Credit News": ["markets_economy"],
+  "Global Affairs": ["world_geopolitics", "national_global"],
+  "India & Policy": ["national_global"],
+  "Movies & Culture": ["lifestyle_culture"],
+  "Lifestyle & Design": ["lifestyle_culture"],
+  "Deep Dives 💎": ["deep_dives"]
+};
+
+export const matchesInstanceToRegion = (inst, regionId) => {
+  if (!inst || inst.enabled === false) return false;
+
+  // 1. Explicit primary region match
+  if (inst.sectionRegion === regionId) return true;
+
+  // 2. Legacy / default column matching
+  if (!inst.sectionRegion) {
+    if (regionId === 'hero_col1' && (inst.column === 'left' || inst.templateType === 'hero_lead')) return true;
+    if (regionId === 'hero_col2' && (inst.column === 'center' || inst.templateType === 'hero_second_lead' || inst.templateType === 'hero_stacked')) return true;
+    if (regionId === 'hero_col3' && (inst.column === 'right' || inst.templateType === 'opinion')) return true;
+  }
+
+  // 3. Multi-Assigned Categories matching:
+  // If ANY assigned category in inst.categories maps to this regionId!
+  const assignedCats = Array.isArray(inst.categories) && inst.categories.length > 0 
+    ? inst.categories 
+    : (inst.category ? [inst.category] : []);
+
+  for (const cat of assignedCats) {
+    const mappedRegions = CATEGORY_TO_REGIONS_MAP[cat];
+    if (mappedRegions && mappedRegions.includes(regionId)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 // ============================================================================
 // 4 BASE TEMPLATE DEFINITIONS (INDEPENDENT FACTORY BLUEPRINTS)
 // ============================================================================
@@ -612,12 +657,12 @@ export default function HomepagePlacementBuilder() {
     showToast(`Deleted section "${title}"`, "warning");
   };
 
-  const handleMoveInstance = (instanceId, direction) => {
+  const handleMoveInstance = (instanceId, direction, renderedRegion = null) => {
     const inst = instances.find(i => i.instanceId === instanceId);
     if (!inst) return;
 
     const currentPos = inst.slotPosition === 'below_ad' ? 'below_ad' : 'above_ad';
-    const targetRegion = inst.sectionRegion || inst.column || 'hero_col1';
+    const targetRegion = renderedRegion || inst.sectionRegion || inst.column || 'hero_col1';
     const regionInstances = getInstancesForRegion(targetRegion, currentPos);
     const localIdx = regionInstances.findIndex(i => i.instanceId === instanceId);
 
@@ -686,12 +731,14 @@ export default function HomepagePlacementBuilder() {
       if (index > -1) {
         if (currentCats.length > 1) {
           currentCats.splice(index, 1);
+          showToast(`Removed from "${cat}" section`, "info");
         } else {
           showToast("Section must have at least one category assigned.", "warning");
           return inst;
         }
       } else {
         currentCats.push(cat);
+        showToast(`Added to "${cat}" section! Now active across all selected sections.`, "success");
       }
       return {
         ...inst,
@@ -925,11 +972,7 @@ export default function HomepagePlacementBuilder() {
   const getInstancesForRegion = (regionId, slotPosition = null) => {
     return instances.filter(i => {
       if (i.enabled === false) return false;
-      const matchesRegion = i.sectionRegion === regionId || (!i.sectionRegion && (
-        (regionId === 'hero_col1' && (i.column === 'left' || i.templateType === 'hero_lead')) ||
-        (regionId === 'hero_col2' && (i.column === 'center' || i.templateType === 'hero_second_lead' || i.templateType === 'hero_stacked')) ||
-        (regionId === 'hero_col3' && (i.column === 'right' || i.templateType === 'opinion'))
-      ));
+      const matchesRegion = matchesInstanceToRegion(i, regionId);
 
       if (!matchesRegion) return false;
 
@@ -1076,12 +1119,13 @@ export default function HomepagePlacementBuilder() {
     );
   };
 
-  const renderTemplateCard = (inst) => {
+  const renderTemplateCard = (inst, renderedRegion = null) => {
     const isDragging = draggedInstanceId === inst.instanceId;
     const isMainSelected = selectedNode?.instanceId === inst.instanceId;
     const sizeMode = inst.sizeMode || 'normal';
     const currentPos = inst.slotPosition === 'below_ad' ? 'below_ad' : 'above_ad';
-    const currentRegion = inst.sectionRegion || inst.column || 'hero_col1';
+    const currentRegion = renderedRegion || inst.sectionRegion || inst.column || 'hero_col1';
+    const assignedCats = Array.isArray(inst.categories) ? inst.categories : [inst.category || "Top Stories"];
 
     const slidesList = Array.isArray(inst.slides) && inst.slides.length > 0 
       ? inst.slides 
@@ -1092,7 +1136,7 @@ export default function HomepagePlacementBuilder() {
 
     return (
       <div
-        key={inst.instanceId}
+        key={`${renderedRegion || inst.sectionRegion || 'card'}-${inst.instanceId}`}
         draggable
         onDragStart={(e) => handleDragStart(e, inst.instanceId)}
         onDragEnd={handleDragEnd}
@@ -1134,13 +1178,21 @@ export default function HomepagePlacementBuilder() {
             <span style={{ fontSize: '10px', fontWeight: 800, color: '#f8fafc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {inst.sectionTitle}
             </span>
+            {assignedCats.length > 1 && (
+              <span 
+                style={{ fontSize: '7.5px', fontWeight: 800, color: '#38bdf8', background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '1px 4px', borderRadius: '3px', whiteSpace: 'nowrap', flexShrink: 0 }}
+                title={`Active in ${assignedCats.length} sections: ${assignedCats.join(', ')}`}
+              >
+                🔗 {assignedCats.length} Sections
+              </span>
+            )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}>
             {/* Quick Move Up / Down Buttons */}
             <button
               type="button"
-              onClick={() => handleMoveInstance(inst.instanceId, 'up')}
+              onClick={() => handleMoveInstance(inst.instanceId, 'up', currentRegion)}
               title="Move up in section (or to Top)"
               style={{
                 background: '#131d2c',
@@ -1160,7 +1212,7 @@ export default function HomepagePlacementBuilder() {
             </button>
             <button
               type="button"
-              onClick={() => handleMoveInstance(inst.instanceId, 'down')}
+              onClick={() => handleMoveInstance(inst.instanceId, 'down', currentRegion)}
               title="Move down in section (or to Bottom / below ad)"
               style={{
                 background: '#131d2c',
@@ -1197,13 +1249,13 @@ export default function HomepagePlacementBuilder() {
                 padding: '1px 2px',
                 height: '20px',
                 cursor: 'pointer',
-                maxWidth: '75px'
+                maxWidth: '85px'
               }}
             >
               <option value="hero_col1:above_ad">Hero Col 1</option>
               <option value="hero_col2:above_ad">Hero Col 2</option>
-              <option value="hero_col3:above_ad">Hero Col 3 (Top)</option>
-              <option value="hero_col3:below_ad">Hero Col 3 (Bottom)</option>
+              <option value="hero_col3:above_ad">Editorial (Top)</option>
+              <option value="hero_col3:below_ad">Editorial (Bottom)</option>
               <option value="national_global:above_ad">National (Top)</option>
               <option value="national_global:below_ad">National (Bottom)</option>
               <option value="world_geopolitics:above_ad">World (Top)</option>
@@ -1212,6 +1264,10 @@ export default function HomepagePlacementBuilder() {
               <option value="tech_ai:below_ad">Tech & AI (Bottom)</option>
               <option value="markets_economy:above_ad">Markets (Top)</option>
               <option value="markets_economy:below_ad">Markets (Bottom)</option>
+              <option value="sports_desk:above_ad">Sports Desk (Top)</option>
+              <option value="sports_desk:below_ad">Sports Desk (Bottom)</option>
+              <option value="lifestyle_culture:above_ad">Lifestyle (Top)</option>
+              <option value="lifestyle_culture:below_ad">Lifestyle (Bottom)</option>
               <option value="deep_dives:above_ad">Deep Dives (Top)</option>
               <option value="deep_dives:below_ad">Deep Dives (Bottom)</option>
             </select>
@@ -2290,8 +2346,8 @@ export default function HomepagePlacementBuilder() {
                   boxSizing: 'border-box'
                 }}>
                   {renderSlotDropZone('hero_col1', 'above_ad', '✚ Drop at Top of Col 1')}
-                  {getInstancesForRegion('hero_col1', 'above_ad').map(inst => renderTemplateCard(inst))}
-                  {getInstancesForRegion('hero_col1', 'below_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('hero_col1', 'above_ad').map(inst => renderTemplateCard(inst, 'hero_col1'))}
+                  {getInstancesForRegion('hero_col1', 'below_ad').map(inst => renderTemplateCard(inst, 'hero_col1'))}
                   {renderSlotDropZone('hero_col1', 'below_ad', '✚ Drop at Bottom of Col 1')}
                 </div>
 
@@ -2307,12 +2363,12 @@ export default function HomepagePlacementBuilder() {
                   boxSizing: 'border-box'
                 }}>
                   {renderSlotDropZone('hero_col2', 'above_ad', '✚ Drop at Top of Col 2')}
-                  {getInstancesForRegion('hero_col2', 'above_ad').map(inst => renderTemplateCard(inst))}
-                  {getInstancesForRegion('hero_col2', 'below_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('hero_col2', 'above_ad').map(inst => renderTemplateCard(inst, 'hero_col2'))}
+                  {getInstancesForRegion('hero_col2', 'below_ad').map(inst => renderTemplateCard(inst, 'hero_col2'))}
                   {renderSlotDropZone('hero_col2', 'below_ad', '✚ Drop at Bottom of Col 2')}
                 </div>
 
-                {/* COLUMN 3: RIGHT RAIL (Hero Column 3 / 26%) */}
+                {/* COLUMN 3: RIGHT RAIL (Hero Column 3 / 26% Editorial Rail) */}
                 <div style={{
                   padding: '12px',
                   display: 'flex',
@@ -2322,7 +2378,7 @@ export default function HomepagePlacementBuilder() {
                   boxSizing: 'border-box'
                 }}>
                   {renderSlotDropZone('hero_col3', 'above_ad', '✚ Drop at Top of Rail')}
-                  {getInstancesForRegion('hero_col3', 'above_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('hero_col3', 'above_ad').map(inst => renderTemplateCard(inst, 'hero_col3'))}
                   
                   {/* Sidebar Top Ad (Zone 6) */}
                   {renderBroadsheetAd('dropzone-sidebar-top', 'Sidebar Top (Above Intelligence)', 'rectangle')}
@@ -2330,7 +2386,7 @@ export default function HomepagePlacementBuilder() {
                   {/* Sidebar Sticky Ad (Zone 7) */}
                   {renderBroadsheetAd('dropzone-sidebar-bottom', 'Sidebar Sticky (Below Intelligence)', 'rectangle')}
                   
-                  {getInstancesForRegion('hero_col3', 'below_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('hero_col3', 'below_ad').map(inst => renderTemplateCard(inst, 'hero_col3'))}
                   {renderSlotDropZone('hero_col3', 'below_ad', '✚ Drop at Bottom of Rail')}
                 </div>
               </div>
@@ -2349,11 +2405,11 @@ export default function HomepagePlacementBuilder() {
 
                 {renderSlotDropZone('national_global', 'above_ad', '✚ Drop in National Affairs (Top)')}
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
-                  {getInstancesForRegion('national_global', 'above_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('national_global', 'above_ad').map(inst => renderTemplateCard(inst, 'national_global'))}
                 </div>
                 {renderBroadsheetAd('dropzone-feed-row-1', 'In-Feed Native Stream (Inside National Affairs)', 'in_feed')}
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box', marginTop: getInstancesForRegion('national_global', 'below_ad').length > 0 ? '10px' : '0' }}>
-                  {getInstancesForRegion('national_global', 'below_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('national_global', 'below_ad').map(inst => renderTemplateCard(inst, 'national_global'))}
                 </div>
                 {renderSlotDropZone('national_global', 'below_ad', '✚ Drop in National Affairs (Bottom)')}
               </div>
@@ -2369,11 +2425,11 @@ export default function HomepagePlacementBuilder() {
 
                 {renderSlotDropZone('world_geopolitics', 'above_ad', '✚ Drop in World & Geopolitics (Top)')}
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
-                  {getInstancesForRegion('world_geopolitics', 'above_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('world_geopolitics', 'above_ad').map(inst => renderTemplateCard(inst, 'world_geopolitics'))}
                 </div>
                 {renderBroadsheetAd('dropzone-feed-row-2', 'In-Feed Native Stream (Inside World & Geopolitics)', 'in_feed')}
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box', marginTop: getInstancesForRegion('world_geopolitics', 'below_ad').length > 0 ? '10px' : '0' }}>
-                  {getInstancesForRegion('world_geopolitics', 'below_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('world_geopolitics', 'below_ad').map(inst => renderTemplateCard(inst, 'world_geopolitics'))}
                 </div>
                 {renderSlotDropZone('world_geopolitics', 'below_ad', '✚ Drop in World & Geopolitics (Bottom)')}
               </div>
@@ -2389,10 +2445,10 @@ export default function HomepagePlacementBuilder() {
 
                 {renderSlotDropZone('tech_ai', 'above_ad', '✚ Drop in Tech & AI (Top)')}
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
-                  {getInstancesForRegion('tech_ai', 'above_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('tech_ai', 'above_ad').map(inst => renderTemplateCard(inst, 'tech_ai'))}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box', marginTop: getInstancesForRegion('tech_ai', 'below_ad').length > 0 ? '10px' : '0' }}>
-                  {getInstancesForRegion('tech_ai', 'below_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('tech_ai', 'below_ad').map(inst => renderTemplateCard(inst, 'tech_ai'))}
                 </div>
                 {renderSlotDropZone('tech_ai', 'below_ad', '✚ Drop in Tech & AI (Bottom)')}
               </div>
@@ -2408,10 +2464,10 @@ export default function HomepagePlacementBuilder() {
 
                 {renderSlotDropZone('markets_economy', 'above_ad', '✚ Drop in Markets & Economy (Top)')}
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
-                  {getInstancesForRegion('markets_economy', 'above_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('markets_economy', 'above_ad').map(inst => renderTemplateCard(inst, 'markets_economy'))}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box', marginTop: getInstancesForRegion('markets_economy', 'below_ad').length > 0 ? '10px' : '0' }}>
-                  {getInstancesForRegion('markets_economy', 'below_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('markets_economy', 'below_ad').map(inst => renderTemplateCard(inst, 'markets_economy'))}
                 </div>
                 {renderSlotDropZone('markets_economy', 'below_ad', '✚ Drop in Markets (Bottom)')}
               </div>
@@ -2433,12 +2489,52 @@ export default function HomepagePlacementBuilder() {
 
                 {renderSlotDropZone('deep_dives', 'above_ad', '✚ Drop in Deep Dives (Top)')}
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
-                  {getInstancesForRegion('deep_dives', 'above_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('deep_dives', 'above_ad').map(inst => renderTemplateCard(inst, 'deep_dives'))}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box', marginTop: getInstancesForRegion('deep_dives', 'below_ad').length > 0 ? '10px' : '0' }}>
-                  {getInstancesForRegion('deep_dives', 'below_ad').map(inst => renderTemplateCard(inst))}
+                  {getInstancesForRegion('deep_dives', 'below_ad').map(inst => renderTemplateCard(inst, 'deep_dives'))}
                 </div>
                 {renderSlotDropZone('deep_dives', 'below_ad', '✚ Drop in Deep Dives (Bottom)')}
+              </div>
+
+              {/* SECTION 6: SPORTS DESK & SCORECARDS */}
+              <div style={{ background: '#0d1420', border: '1px solid #1e293b', borderRadius: '8px', padding: '14px', margin: '16px 0', boxSizing: 'border-box', width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '6px', marginBottom: '10px' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase' }}>
+                    | Sports Desk & Scorecards
+                  </div>
+                  <span style={{ fontSize: '10.5px', color: '#64748b' }}>Slot Region: <strong style={{ color: '#38bdf8' }}>sports_desk</strong></span>
+                </div>
+
+                {renderSlotDropZone('sports_desk', 'above_ad', '✚ Drop in Sports Desk (Top)')}
+                <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
+                  {getInstancesForRegion('sports_desk', 'above_ad').map(inst => renderTemplateCard(inst, 'sports_desk'))}
+                </div>
+                {renderBroadsheetAd('dropzone-feed-row-sports', 'In-Feed Native Stream (Inside Sports)', 'in_feed')}
+                <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box', marginTop: getInstancesForRegion('sports_desk', 'below_ad').length > 0 ? '10px' : '0' }}>
+                  {getInstancesForRegion('sports_desk', 'below_ad').map(inst => renderTemplateCard(inst, 'sports_desk'))}
+                </div>
+                {renderSlotDropZone('sports_desk', 'below_ad', '✚ Drop in Sports Desk (Bottom)')}
+              </div>
+
+              {/* SECTION 7: LIFESTYLE, CULTURE & MOVIES */}
+              <div style={{ background: '#0d1420', border: '1px solid #1e293b', borderRadius: '8px', padding: '14px', margin: '16px 0', boxSizing: 'border-box', width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '6px', marginBottom: '10px' }}>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#ec4899', textTransform: 'uppercase' }}>
+                    | Lifestyle, Culture & Entertainment
+                  </div>
+                  <span style={{ fontSize: '10.5px', color: '#64748b' }}>Slot Region: <strong style={{ color: '#38bdf8' }}>lifestyle_culture</strong></span>
+                </div>
+
+                {renderSlotDropZone('lifestyle_culture', 'above_ad', '✚ Drop in Lifestyle & Culture (Top)')}
+                <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
+                  {getInstancesForRegion('lifestyle_culture', 'above_ad').map(inst => renderTemplateCard(inst, 'lifestyle_culture'))}
+                </div>
+                {renderBroadsheetAd('dropzone-feed-row-lifestyle', 'In-Feed Native Stream (Inside Lifestyle)', 'in_feed')}
+                <div style={{ display: 'grid', gridTemplateColumns: previewViewport === 'desktop' ? 'repeat(auto-fit, minmax(260px, 1fr))' : '1fr', gap: '10px', width: '100%', boxSizing: 'border-box', marginTop: getInstancesForRegion('lifestyle_culture', 'below_ad').length > 0 ? '10px' : '0' }}>
+                  {getInstancesForRegion('lifestyle_culture', 'below_ad').map(inst => renderTemplateCard(inst, 'lifestyle_culture'))}
+                </div>
+                {renderSlotDropZone('lifestyle_culture', 'below_ad', '✚ Drop in Lifestyle (Bottom)')}
               </div>
 
               {/* ZONE 9: FOOTER FLOATING AD */}
@@ -2634,6 +2730,33 @@ export default function HomepagePlacementBuilder() {
                     style={{ width: '100%', background: '#090e17', border: '1px solid #1e293b', color: '#ffffff', padding: '7px 10px', borderRadius: '6px', fontSize: '11.5px', fontWeight: 700, boxSizing: 'border-box' }}
                   />
                 </div>
+
+                {/* Active Across Selected Sections Banner */}
+                {(() => {
+                  const assignedList = selectedInstance.categories || [selectedInstance.category || "Top Stories"];
+                  return (
+                    <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '6px', padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '9.5px', fontWeight: 900, color: '#38bdf8', textTransform: 'uppercase' }}>
+                          ⚡ Multi-Section Distribution:
+                        </span>
+                        <span style={{ fontSize: '9px', fontWeight: 800, background: '#2563eb', color: '#ffffff', padding: '1px 5px', borderRadius: '3px' }}>
+                          {assignedList.length} Active {assignedList.length === 1 ? 'Section' : 'Sections'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '10px', color: '#cbd5e1', lineHeight: 1.35 }}>
+                        This template will automatically render across all selected sections below:
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '2px' }}>
+                        {assignedList.map(c => (
+                          <span key={c} style={{ fontSize: '9.5px', fontWeight: 800, background: '#131d2c', color: '#38bdf8', border: '1px solid #26374d', padding: '2px 6px', borderRadius: '3px' }}>
+                            ✓ {c}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Multi-Category Mapping in Inspector */}
                 <div>
