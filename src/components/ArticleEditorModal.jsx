@@ -3131,6 +3131,17 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     }
   };
 
+  const downloadCompressedVideo = () => {
+    if (!compressedResult?.url) return;
+    const a = document.createElement('a');
+    a.href = compressedResult.url;
+    const ext = compressedResult.mimeType?.includes('webm') ? 'webm' : 'mp4';
+    a.download = `compressed-hd-${compressQuality}-${Date.now()}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
   // ── LINK INSERTION & NORMALIZATION HANDLERS ──
   const normalizeEditorLinks = (container = editorRef.current) => {
     if (!container) return;
@@ -3672,13 +3683,28 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
           const serverSrc = vid.getAttribute('data-server-src');
           const currentSrc = vid.getAttribute('src') || '';
           const sourceEl = vid.querySelector('source');
-          const finalSrc = (serverSrc && !serverSrc.startsWith('blob:')) 
-            ? serverSrc 
-            : (currentSrc && !currentSrc.startsWith('blob:') ? currentSrc : 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4');
+          const sourceSrc = sourceEl ? (sourceEl.getAttribute('data-server-src') || sourceEl.getAttribute('src') || '') : '';
+          const originalVideoUrl = vid.getAttribute('data-video-url') || vid.closest('figure')?.getAttribute('data-video-url') || vid.closest('figure')?.getAttribute('data-source-url') || '';
 
-          vid.setAttribute('src', finalSrc);
-          vid.src = finalSrc;
-          if (sourceEl) {
+          // Determine the best non-blob persistent URL
+          let finalSrc = '';
+          if (serverSrc && !serverSrc.startsWith('blob:')) {
+            finalSrc = serverSrc;
+          } else if (currentSrc && !currentSrc.startsWith('blob:')) {
+            finalSrc = currentSrc;
+          } else if (sourceSrc && !sourceSrc.startsWith('blob:')) {
+            finalSrc = sourceSrc;
+          } else if (originalVideoUrl && !originalVideoUrl.startsWith('blob:')) {
+            finalSrc = originalVideoUrl;
+          } else {
+            finalSrc = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+          }
+
+          if (!currentSrc || currentSrc.startsWith('blob:')) {
+            vid.setAttribute('src', finalSrc);
+            vid.src = finalSrc;
+          }
+          if (sourceEl && (!sourceEl.getAttribute('src') || sourceEl.getAttribute('src').startsWith('blob:'))) {
             sourceEl.setAttribute('src', finalSrc);
             sourceEl.src = finalSrc;
           }
@@ -8553,14 +8579,24 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
               </button>
               
               {compressStatus === 'done' ? (
-                <button 
-                  type="button" 
-                  className="btn btn-primary"
-                  onClick={applyCompressedVideo}
-                  style={{ background: '#10b981', color: '#000', fontWeight: 800, border: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
-                >
-                  <span>✨ Apply Compressed Video to Article</span>
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    type="button" 
+                    className="btn btn-secondary"
+                    onClick={downloadCompressedVideo}
+                    style={{ background: 'rgba(255,255,255,0.08)', color: '#f8fafc', fontWeight: 600, border: '1px solid rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <span>💾 Download HD Video</span>
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-primary"
+                    onClick={applyCompressedVideo}
+                    style={{ background: '#10b981', color: '#000', fontWeight: 800, border: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <span>✨ Apply Compressed Video to Article</span>
+                  </button>
+                </div>
               ) : (
                 <button 
                   type="button" 
