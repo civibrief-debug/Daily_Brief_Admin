@@ -367,14 +367,26 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     const hasActualMedia = mediaWrapper && (mediaWrapper.querySelector('img, video, iframe, .video-fallback-card') || isDirectMedia);
 
     if (!isFigcaption && hasActualMedia && editorRef.current?.contains(mediaWrapper || e.target) && (mediaWrapper || e.target) !== editorRef.current) {
-      const figTarget = mediaWrapper || e.target;
+      let figTarget = mediaWrapper || e.target;
+
+      const hasFallbackCard = figTarget.querySelector?.('.video-fallback-card, .social-embed-card') || 
+                              figTarget.classList?.contains('video-fallback-card') || 
+                              figTarget.classList?.contains('social-embed-card') ||
+                              figTarget.classList?.contains('web-card-wrapper');
+
+      if (hasFallbackCard) {
+        normalizeEditorMedia(editorRef.current);
+        const upgraded = editorRef.current?.querySelector('.video-wrapper:last-of-type') || 
+                         editorRef.current?.querySelector('video')?.closest('figure') || 
+                         editorRef.current?.querySelector('figure:last-of-type');
+        if (upgraded) {
+          figTarget = upgraded;
+        }
+      }
+
       setSelectedImageNode(figTarget);
       updateImageBounds(figTarget);
       dismissFloatingTool();
-
-      if (figTarget.querySelector?.('.video-fallback-card, .social-embed-card') || figTarget.classList?.contains('video-fallback-card') || figTarget.classList?.contains('social-embed-card')) {
-        normalizeEditorMedia(editorRef.current);
-      }
 
       const isVid = (figTarget.tagName === 'VIDEO' || 
                     figTarget.querySelector?.('video, iframe, [data-video-url]') ||
@@ -387,9 +399,10 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                     figTarget.classList?.contains('online-video-wrapper') ||
                     /pexels|video|mp4|stream/i.test(figTarget.getAttribute?.('data-video-url') || '') ||
                     /pexels|video|mp4|stream/i.test(figTarget.getAttribute?.('data-media-url') || '') ||
+                    /pexels|video|mp4|stream/i.test(figTarget.querySelector?.('a')?.getAttribute('href') || '') ||
+                    /pexels\.com/i.test(figTarget.innerHTML || '') ||
                     figTarget.classList?.contains('video-fallback-card') ||
-                    (figTarget.querySelector?.('.video-fallback-card, .social-embed-card') && 
-                      /pexels|video|youtube|vimeo|stream/i.test(figTarget.querySelector?.('.video-fallback-card, .social-embed-card')?.getAttribute('data-media-url') || ''))) &&
+                    figTarget.querySelector?.('.video-fallback-card, .social-embed-card')) &&
                     !figTarget.classList?.contains('img-wrapper') &&
                     !figTarget.querySelector?.('img');
       
@@ -2204,8 +2217,10 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
         selectedImageNode.classList?.contains('online-video-wrapper') ||
         /pexels|video|mp4|stream/i.test(selectedImageNode.getAttribute?.('data-video-url') || '') ||
         /pexels|video|mp4|stream/i.test(selectedImageNode.getAttribute?.('data-media-url') || '') ||
-        (selectedImageNode.querySelector?.('.video-fallback-card, .social-embed-card') && 
-          /pexels|video|youtube|vimeo|stream/i.test(selectedImageNode.querySelector?.('.video-fallback-card, .social-embed-card')?.getAttribute('data-media-url') || ''))
+        /pexels|video|mp4|stream/i.test(selectedImageNode.querySelector?.('a')?.getAttribute('href') || '') ||
+        /pexels\.com/i.test(selectedImageNode.innerHTML || '') ||
+        selectedImageNode.classList?.contains('video-fallback-card') ||
+        selectedImageNode.querySelector?.('.video-fallback-card, .social-embed-card')
       ) && !selectedImageNode.querySelector?.('img') && !selectedImageNode.classList?.contains('img-wrapper');
 
       if (isVideo) {
@@ -2454,10 +2469,14 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
 
     // Fallback or Plain Text Paste
     if (plainText) {
-      // If author pasted a standalone image or social media link, auto-extract and insert picture!
       const singleUrl = plainText.trim();
       if (/^https?:\/\/[^\s]+$/i.test(singleUrl)) {
-        const isSocialOrImg = /(?:twitter\.com|x\.com|youtube\.com|youtu\.be|instagram\.com|facebook\.com|reddit\.com|pinterest\.com|pbs\.twimg\.com|\.(jpg|jpeg|png|webp|gif|svg|avif))/i.test(singleUrl);
+        const isVideoLink = /(?:pexels\.com\/(?:video|videos|search\/videos)|youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com|loom\.com|streamable\.com|rumble\.com|\.(mp4|webm|mov|m4v|m3u8))/i.test(singleUrl);
+        if (isVideoLink) {
+          insertVideoHtml(singleUrl, '', 'video');
+          return;
+        }
+        const isSocialOrImg = /(?:twitter\.com|x\.com|instagram\.com|facebook\.com|reddit\.com|pinterest\.com|pbs\.twimg\.com|\.(jpg|jpeg|png|webp|gif|svg|avif))/i.test(singleUrl);
         if (isSocialOrImg) {
           insertImageHtml(singleUrl);
           return;
@@ -6271,9 +6290,10 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                                      selectedImageNode.classList?.contains('online-video-wrapper') ||
                                      /pexels|video|mp4|stream/i.test(selectedImageNode.getAttribute?.('data-video-url') || '') ||
                                      /pexels|video|mp4|stream/i.test(selectedImageNode.getAttribute?.('data-media-url') || '') ||
+                                     /pexels|video|mp4|stream/i.test(selectedImageNode.querySelector?.('a')?.getAttribute('href') || '') ||
+                                     /pexels\.com/i.test(selectedImageNode.innerHTML || '') ||
                                      selectedImageNode.classList?.contains('video-fallback-card') ||
-                                     (selectedImageNode.querySelector?.('.video-fallback-card, .social-embed-card') && 
-                                       /pexels|video|youtube|vimeo|stream/i.test(selectedImageNode.querySelector?.('.video-fallback-card, .social-embed-card')?.getAttribute('data-media-url') || ''))) &&
+                                     selectedImageNode.querySelector?.('.video-fallback-card, .social-embed-card')) &&
                                      !selectedImageNode.classList?.contains('img-wrapper') &&
                                      !selectedImageNode.querySelector?.('img');
 
@@ -7686,7 +7706,14 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                 setShowUrlModal(false);
                 setImageUrlInput('');
                 setImageCaptionInput('');
-                await insertImageHtml(urlToInsert, capToInsert, alignToInsert);
+                
+                // If user pasted a video link into picture modal by mistake, automatically insert as video!
+                const isVideoLink = /(?:pexels\.com\/(?:video|videos|search\/videos)|youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com|loom\.com|streamable\.com|rumble\.com|\.(mp4|webm|mov|m4v|m3u8))/i.test(urlToInsert);
+                if (isVideoLink) {
+                  insertVideoHtml(urlToInsert, capToInsert, 'video');
+                } else {
+                  await insertImageHtml(urlToInsert, capToInsert, alignToInsert);
+                }
               }
             }}>
               {(() => {
