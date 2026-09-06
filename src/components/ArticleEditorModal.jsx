@@ -372,6 +372,10 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
       updateImageBounds(figTarget);
       dismissFloatingTool();
 
+      if (figTarget.querySelector?.('.video-fallback-card, .social-embed-card') || figTarget.classList?.contains('video-fallback-card') || figTarget.classList?.contains('social-embed-card')) {
+        normalizeEditorMedia(editorRef.current);
+      }
+
       const isVid = (figTarget.tagName === 'VIDEO' || 
                     figTarget.querySelector?.('video, iframe, [data-video-url]') ||
                     figTarget.classList?.contains('video-wrapper') || 
@@ -381,7 +385,11 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                     figTarget.classList?.contains('pexels-video-wrapper') ||
                     figTarget.classList?.contains('iframe-video-wrapper') ||
                     figTarget.classList?.contains('online-video-wrapper') ||
-                    (figTarget.querySelector?.('.video-fallback-card') && /pexels|video|youtube|vimeo|stream/i.test(figTarget.querySelector?.('.video-fallback-card')?.getAttribute('data-media-url') || ''))) &&
+                    /pexels|video|mp4|stream/i.test(figTarget.getAttribute?.('data-video-url') || '') ||
+                    /pexels|video|mp4|stream/i.test(figTarget.getAttribute?.('data-media-url') || '') ||
+                    figTarget.classList?.contains('video-fallback-card') ||
+                    (figTarget.querySelector?.('.video-fallback-card, .social-embed-card') && 
+                      /pexels|video|youtube|vimeo|stream/i.test(figTarget.querySelector?.('.video-fallback-card, .social-embed-card')?.getAttribute('data-media-url') || ''))) &&
                     !figTarget.classList?.contains('img-wrapper') &&
                     !figTarget.querySelector?.('img');
       
@@ -1164,15 +1172,13 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
     });
 
     // 0.5. Auto-upgrade any dead .video-fallback-card containing a video URL into a live playable video player
-    const fallbackCards = container.querySelectorAll('.video-fallback-card, .social-embed-card');
+    const fallbackCards = container.querySelectorAll('.video-fallback-card, .social-embed-card, .web-card-wrapper');
     fallbackCards.forEach((card) => {
-      const mediaUrl = card.getAttribute('data-media-url') || card.querySelector('a')?.getAttribute('href') || '';
-      if (!mediaUrl) return;
-
-      const isVideoLink = /pexels\.com|pixabay\.com\/videos|coverr\.co|youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com|dai\.ly|loom\.com|streamable\.com|rumble\.com|twitch\.tv|fast\.wistia|\.(mp4|webm|mov|m4v|m3u8)/i.test(mediaUrl);
-      if (isVideoLink) {
-        const captionText = card.querySelector('p')?.textContent?.trim() || '';
-        const parsed = parseVideoUrl(mediaUrl, captionText, 'center');
+      const mediaUrl = card.getAttribute('data-media-url') || card.querySelector('a')?.getAttribute('href') || card.getAttribute('data-video-url') || '';
+      const isPexelsOrVideo = /pexels|pixabay|coverr|youtube|youtu\.be|vimeo|dailymotion|loom|stream|rumble|twitch|wistia|\.(mp4|webm|mov|m4v|m3u8)/i.test(mediaUrl) || /pexels\.com/i.test(card.innerHTML);
+      if (isPexelsOrVideo) {
+        const captionText = card.closest('figure')?.querySelector('figcaption')?.textContent?.trim() || card.querySelector('p')?.textContent?.trim() || '';
+        const parsed = parseVideoUrl(mediaUrl || 'https://www.pexels.com/video/2053100/', captionText, 'center');
         if (parsed.html) {
           const tempWrapper = document.createElement('div');
           tempWrapper.innerHTML = parsed.html;
@@ -2186,13 +2192,21 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
       // Dismiss floating text toolbox whenever an image, video, or embed is selected
       dismissFloatingTool();
 
-      const isVideo = (selectedImageNode.tagName === 'VIDEO' ||
+      const isVideo = (
+        selectedImageNode.tagName === 'VIDEO' ||
+        selectedImageNode.querySelector?.('video, iframe, [data-video-url]') ||
         selectedImageNode.classList?.contains('video-wrapper') ||
         selectedImageNode.classList?.contains('youtube-video-wrapper') ||
         selectedImageNode.classList?.contains('vimeo-video-wrapper') ||
-        selectedImageNode.classList?.contains('direct-video-wrapper')) &&
-        !selectedImageNode.classList?.contains('social-embed-wrapper') &&
-        !selectedImageNode.classList?.contains('social-embed-card');
+        selectedImageNode.classList?.contains('direct-video-wrapper') ||
+        selectedImageNode.classList?.contains('pexels-video-wrapper') ||
+        selectedImageNode.classList?.contains('iframe-video-wrapper') ||
+        selectedImageNode.classList?.contains('online-video-wrapper') ||
+        /pexels|video|mp4|stream/i.test(selectedImageNode.getAttribute?.('data-video-url') || '') ||
+        /pexels|video|mp4|stream/i.test(selectedImageNode.getAttribute?.('data-media-url') || '') ||
+        (selectedImageNode.querySelector?.('.video-fallback-card, .social-embed-card') && 
+          /pexels|video|youtube|vimeo|stream/i.test(selectedImageNode.querySelector?.('.video-fallback-card, .social-embed-card')?.getAttribute('data-media-url') || ''))
+      ) && !selectedImageNode.querySelector?.('img') && !selectedImageNode.classList?.contains('img-wrapper');
 
       if (isVideo) {
         setActiveTab('Video Format');
@@ -6255,7 +6269,11 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                                      selectedImageNode.classList?.contains('pexels-video-wrapper') ||
                                      selectedImageNode.classList?.contains('iframe-video-wrapper') ||
                                      selectedImageNode.classList?.contains('online-video-wrapper') ||
-                                     (selectedImageNode.querySelector?.('.video-fallback-card') && /pexels|video|youtube|vimeo|stream/i.test(selectedImageNode.querySelector?.('.video-fallback-card')?.getAttribute('data-media-url') || ''))) &&
+                                     /pexels|video|mp4|stream/i.test(selectedImageNode.getAttribute?.('data-video-url') || '') ||
+                                     /pexels|video|mp4|stream/i.test(selectedImageNode.getAttribute?.('data-media-url') || '') ||
+                                     selectedImageNode.classList?.contains('video-fallback-card') ||
+                                     (selectedImageNode.querySelector?.('.video-fallback-card, .social-embed-card') && 
+                                       /pexels|video|youtube|vimeo|stream/i.test(selectedImageNode.querySelector?.('.video-fallback-card, .social-embed-card')?.getAttribute('data-media-url') || ''))) &&
                                      !selectedImageNode.classList?.contains('img-wrapper') &&
                                      !selectedImageNode.querySelector?.('img');
 
