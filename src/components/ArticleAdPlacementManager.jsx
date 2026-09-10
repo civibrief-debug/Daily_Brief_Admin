@@ -2422,7 +2422,7 @@ export default function ArticleAdPlacementManager({
                   )}
                 </div>
                 <div style={{ fontSize: '11px', color: '#94a3b8' }}>
-                  By <strong>{formData.author || 'Staff Reporter'}</strong> • {formData.readTime || '3 min read'}
+                  By <strong>{formData.author || 'Staff Reporter'}</strong>
                 </div>
               </div>
 
@@ -2799,7 +2799,7 @@ export default function ArticleAdPlacementManager({
             </h1>
 
             <div style={{ fontSize: '12px', color: '#94a3b8', marginBottom: '20px' }}>
-              By <strong>{formData.author || 'Staff Reporter'}</strong> • {formData.readTime || '3 min read'}
+              By <strong>{formData.author || 'Staff Reporter'}</strong>
             </div>
 
             {/* Summary Block */}

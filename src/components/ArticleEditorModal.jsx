@@ -8767,7 +8767,7 @@ export default function ArticleEditorModal({ isOpen, onClose, articleToEdit = nu
                   </div>
                   <div>
                     <div style={{ fontSize: '14px', fontWeight: 700, color: '#f8fafc' }}>By {currentAuthor}</div>
-                    <div style={{ fontSize: '11px', color: '#64748b' }}>Published on {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} • 3 min read</div>
+                    <div style={{ fontSize: '11px', color: '#64748b' }}>Published on {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
                   </div>
                 </div>
 

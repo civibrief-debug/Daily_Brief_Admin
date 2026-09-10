@@ -1435,7 +1435,7 @@ export default function HomepagePlacementBuilder() {
                   </h2>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ fontSize: '8.5px', color: '#94a3b8' }}>
-                      By <strong style={{ color: '#e2e8f0' }}>{currentSlide?.author || 'Editorial Board'}</strong> • {currentSlide?.readTime || '4 min read'}
+                      By <strong style={{ color: '#e2e8f0' }}>{currentSlide?.author || 'Editorial Board'}</strong>
                     </div>
                     <button
                       type="button"
@@ -3266,7 +3266,7 @@ export default function HomepagePlacementBuilder() {
                   {viewingArticle.title}
                 </h2>
                 <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-                  By <strong style={{ color: '#ffffff' }}>{viewingArticle.author || 'Super Admin'}</strong> • {viewingArticle.readTime || '5 min read'} • <span style={{ color: '#10b981' }}>Live Editorial Sync</span>
+                  By <strong style={{ color: '#ffffff' }}>{viewingArticle.author || 'Super Admin'}</strong> • <span style={{ color: '#10b981' }}>Live Editorial Sync</span>
                 </div>
               </div>
               <button

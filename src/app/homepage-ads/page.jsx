@@ -2226,8 +2226,6 @@ export default function HomepageAdPlacementPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '12px', color: '#64748b', borderBottom: '1px solid #1e293b', paddingBottom: '14px', marginBottom: '20px' }}>
                 <span>By <strong style={{ color: '#f8fafc' }}>{viewingArticle.author || 'Staff Reporter'}</strong></span>
                 <span>•</span>
-                <span>{viewingArticle.readTime || '5 min read'}</span>
-                <span>•</span>
                 <span style={{ color: '#10b981' }}>Live Editorial Sync</span>
               </div>
 
