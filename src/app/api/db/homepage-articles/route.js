@@ -3,6 +3,17 @@ import { queryD1 } from '../../../../lib/edgeDb';
 
 export const runtime = 'edge';
 
+function cleanSections(sections) {
+  if (!Array.isArray(sections)) return [];
+  return sections.map(sec => {
+    if (!sec) return sec;
+    return {
+      ...sec,
+      sectionTitle: sec.sectionTitle ? sec.sectionTitle.replace(/\s*\((?:copy|copied)\)/gi, '').trim() : sec.sectionTitle
+    };
+  });
+}
+
 export async function GET() {
   try {
     await queryD1(`CREATE TABLE IF NOT EXISTS homepage_articles (id TEXT PRIMARY KEY, data TEXT, updated_at TEXT);`);
@@ -10,8 +21,9 @@ export async function GET() {
     if (rows && rows.length > 0 && rows[0].data) {
       const parsed = JSON.parse(rows[0].data);
       if (Array.isArray(parsed) && parsed.length > 0) {
+        const cleaned = cleanSections(parsed);
         return NextResponse.json(
-          { success: true, data: parsed },
+          { success: true, data: cleaned },
           { headers: { 'Cache-Control': 'public, max-age=1, s-maxage=2, stale-while-revalidate=10' } }
         );
       }
@@ -25,7 +37,8 @@ export async function GET() {
 export async function POST(req) {
   try {
     const body = await req.json();
-    const sections = body.sections || [];
+    const rawSections = body.sections || [];
+    const sections = cleanSections(rawSections);
 
     await queryD1(`CREATE TABLE IF NOT EXISTS homepage_articles (id TEXT PRIMARY KEY, data TEXT, updated_at TEXT);`);
     await queryD1(

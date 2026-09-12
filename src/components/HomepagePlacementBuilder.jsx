@@ -528,7 +528,11 @@ export default function HomepagePlacementBuilder() {
           const json = await res.json();
           if (json && json.success && Array.isArray(json.data) && json.data.length > 0) {
             if (json.data[0]?.templateType || json.data[0]?.mainStory || json.data[0]?.slides) {
-              setInstances(json.data);
+              const cleaned = json.data.map(inst => ({
+                ...inst,
+                sectionTitle: (inst.sectionTitle || "").replace(/\s*\((?:copy|copied)\)/gi, '').trim()
+              }));
+              setInstances(cleaned);
             }
           }
         }
@@ -618,7 +622,8 @@ export default function HomepagePlacementBuilder() {
     if (!target) return;
     const cloned = JSON.parse(JSON.stringify(target));
     cloned.instanceId = `inst-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-    cloned.sectionTitle = `${cloned.sectionTitle} (Copy)`;
+    // Keep exact template title without appending "(Copy)" or "(COPY)"
+    cloned.sectionTitle = (cloned.sectionTitle || "").replace(/\s*\((?:copy|copied)\)/gi, '').trim();
 
     if (Array.isArray(cloned.slides)) {
       cloned.slides = cloned.slides.map((s, idx) => ({
@@ -646,7 +651,7 @@ export default function HomepagePlacementBuilder() {
     setHasUnsavedChanges(true);
     setSelectedNode({ instanceId: cloned.instanceId, nodeType: cloned.slides ? 'slide' : 'mainStory', childIndex: 0 });
     setIsInspectorOpen(true);
-    showToast(`Duplicated "${cloned.sectionTitle}" with preserved sliding carousel!`, "success");
+    showToast(`Template "${cloned.sectionTitle}" duplicated successfully!`, "success");
   };
 
   const handleDeleteInstance = (instanceId, title) => {
@@ -759,10 +764,10 @@ export default function HomepagePlacementBuilder() {
       count = Number(templateQuantityMode);
     }
 
-    const newCopies = Array.from({ length: count }, (_, idx) => {
-      const existingCount = instances.filter(i => i.templateType === selectedCoreTemplate.type).length;
+    const newCopies = Array.from({ length: count }, () => {
+      const defaultTitle = selectedCoreTemplate.createInstance().sectionTitle;
       return selectedCoreTemplate.createInstance(
-        `${selectedCoreTemplate.label} #${existingCount + idx + 1}`,
+        defaultTitle,
         templateTargetCategories,
         templateTargetColumn,
         templateTargetRegion
@@ -868,13 +873,18 @@ export default function HomepagePlacementBuilder() {
   const handleSaveAndPublish = async () => {
     setIsSaving(true);
     try {
+      const cleaned = instances.map(inst => ({
+        ...inst,
+        sectionTitle: (inst.sectionTitle || "").replace(/\s*\((?:copy|copied)\)/gi, '').trim()
+      }));
+      setInstances(cleaned);
       if (typeof updateHomepageArticlePlacements === 'function') {
-        await updateHomepageArticlePlacements(instances);
+        await updateHomepageArticlePlacements(cleaned);
       }
       await fetch('/api/db/homepage-articles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sections: instances })
+        body: JSON.stringify({ sections: cleaned })
       });
       setHasUnsavedChanges(false);
       showToast("Homepage layout successfully saved & published live to all readers!", "success");
@@ -1613,7 +1623,9 @@ export default function HomepagePlacementBuilder() {
         {inst.templateType === 'hero_stacked' && (
           <div style={{ background: '#070b10', border: '1px solid #1e293b', borderRadius: '6px', padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: '5px', width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #16202e', paddingBottom: '2px' }}>
-              <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#059669' }}>{inst.sectionTitle}</span>
+              <span style={{ fontSize: '8.5px', fontWeight: 800, color: '#059669' }}>
+                {(inst.sectionTitle || "").replace(/\s*\((?:copy|copied)\)/gi, '').trim()}
+              </span>
               <span style={{ fontSize: '8px', color: '#64748b' }}>{inst.stories?.length || 0} stories</span>
             </div>
 
